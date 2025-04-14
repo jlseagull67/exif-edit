@@ -1,0 +1,173 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use utf8;
+binmode STDOUT, ':utf8';
+use Gtk3 -init;
+use Glib 'TRUE', 'FALSE';
+use File::Basename;
+use Image::ExifTool;
+
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title("EXIF Editor");
+$window->set_default_size(1600, 600);
+$window->signal_connect(destroy => sub { Gtk3->main_quit });
+
+my $monitor_width = Gtk3::Gdk::Display::get_default()
+                  ->get_primary_monitor()
+                  ->get_geometry()->{width};
+my $thumbsize = $monitor_width > 1920 ? 400 : $monitor_width == 1920 ? 300 : $monitor_width == 1440 ? 200 : 150;
+
+my $vbox_main = Gtk3::Box->new('vertical', 0);
+$window->add($vbox_main);
+$window->maximize();
+
+# Accelerator-Gruppe für Shortcuts
+my $accel_group = Gtk3::AccelGroup->new();
+$window->add_accel_group($accel_group);
+
+# Menü erstellen
+my $menubar = Gtk3::MenuBar->new();
+my $menu_item_datei = Gtk3::MenuItem->new_with_label("Datei");
+my $menu_datei = Gtk3::Menu->new();
+$menu_item_datei->set_submenu($menu_datei);
+$menubar->append($menu_item_datei);
+
+# Neu laden
+my $menu_item_reload = Gtk3::MenuItem->new_with_label("Neu laden");
+$menu_item_reload->signal_connect(activate => \&load_images);
+$menu_item_reload->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_r, ['control-mask'], 'visible');
+$menu_datei->append($menu_item_reload);
+
+# # ToDel
+my $menu_item_todel = Gtk3::MenuItem->new_with_label("To Del");
+$menu_item_todel->signal_connect(activate => \&todel_images);
+$menu_item_todel->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_d, ['control-mask'], 'visible');
+$menu_datei->append($menu_item_todel);
+
+# Beenden
+my $menu_item_quit = Gtk3::MenuItem->new_with_label("Beenden");
+$menu_item_quit->signal_connect(activate => sub { Gtk3->main_quit() });
+$menu_item_quit->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_q, ['control-mask'], 'visible');
+$menu_datei->append($menu_item_quit);
+
+$vbox_main->pack_start($menubar, FALSE, FALSE, 0);
+
+# Scrollbereich
+my $scroll = Gtk3::ScrolledWindow->new();
+$scroll->set_policy('automatic', 'automatic');
+$vbox_main->pack_start($scroll, TRUE, TRUE, 0);
+
+# Bildcontainer
+my $vbox_images = Gtk3::Box->new('vertical', 10);
+$scroll->add($vbox_images);
+
+# Todel-Funktion
+# Verschiebt alle Bilder mit Exif-Comment = todel in ein Unterverzeichnis
+sub todel_images {
+    my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
+    my $exifTool = Image::ExifTool->new();
+    my $col = 0;
+    my $row = 0;
+
+    if (! -d 'todel'){
+        `mkdir todel`;
+    }
+    my $comment ='';
+
+    foreach my $file (@images) {
+
+        $comment = $exifTool->ImageInfo($file)->{"Comment"} // "";
+
+        if ($comment eq 'todel') {
+            `mv $file todel/`;
+        }
+    }
+    &load_images;
+}
+
+# Lösche alle Widgets
+sub remove_widget {
+    my ($widget) = @_;
+    $vbox_images->remove($widget);
+}
+
+$vbox_images->foreach(\&remove_widget);  # Clear
+
+# Funktion zum Laden der Bilder
+sub load_images {
+    $vbox_images->foreach(\&remove_widget);  # Clear
+
+    my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
+    my $row;
+    my $col;
+    my $i = 0;
+
+    foreach my $file (@images) {
+
+
+        my $exifTool = Image::ExifTool->new;
+        $exifTool->ExtractInfo($file);
+        my $comment = $exifTool->GetValue('Comment', 'PrintConv') // '';
+
+        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize, TRUE);
+        my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
+
+        # Pack image into an EventBox to allow mouse interaction
+        my $eventbox = Gtk3::EventBox->new();
+        $eventbox->add($image);
+
+        $eventbox->add_events(['button-press-mask']);
+        $eventbox->signal_connect(button_press_event => sub {
+            my ($widget, $event) = @_;
+            if ($event->button == 1) {
+                system("firefox \"$file\" &");
+            } elsif ($event->button == 3) {
+                system("gimp \"$file\" &");
+            }
+            return TRUE;
+        });
+
+        my $label = Gtk3::Label->new($file);
+        my $entry = Gtk3::Entry->new();
+        $entry->set_text($comment);
+
+        $entry->signal_connect(focus_out_event => sub {
+            my $new_comment = $entry->get_text();
+            my $tool = Image::ExifTool->new;
+            $tool->SetNewValue('Comment', $new_comment);
+            $tool->WriteInfo($file);
+            return FALSE;
+        });
+
+
+        # Container für Bild, Label, Entry
+        my $vbox = Gtk3::Box->new('vertical', 5);
+        $vbox->pack_start($eventbox, FALSE, FALSE, 0);
+        $vbox->pack_start($label, FALSE, FALSE, 0);
+        $vbox->pack_start($entry, FALSE, FALSE, 0);
+
+        # Neue Zeile alle 6 Bilder
+        if ($i % 6 == 0) {
+            $row = Gtk3::Box->new('horizontal', 10);
+            $vbox_images->pack_start($row, FALSE, FALSE, 10);
+        }
+        $i ++;
+        $row->pack_start($vbox, FALSE, FALSE, 10);
+    }
+
+    $vbox_images->show_all();
+}
+
+$menu_item_reload->signal_connect(activate => \&load_images);
+$menu_item_todel->signal_connect(activate => \&todel_images);
+$menu_item_quit->signal_connect(activate => sub { Gtk3->main_quit });
+
+load_images();
+
+# Connect the destroy signal to exit the application
+$window->signal_connect(destroy => sub { Gtk3::main_quit() });
+
+$window->show_all();
+Gtk3->main();
