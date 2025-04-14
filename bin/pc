@@ -1,0 +1,215 @@
+#!/bin/perl -w
+
+use strict;
+
+# usage: pc  filename -s starttime (optional) -e endtime (optional) -c cut_count (optional)
+
+# usage: pc  filename -t starttime1 starttime2 starttimen
+
+# usage: pc  filename -flip "v"|"h"
+
+# usage: pc filename -ic fromtime totime    # ic für innercut removes a section in the middle
+
+## Loop over all files in dir:
+#  for i in *; do ../../pc "$i" -a 16:9; done
+
+# ffmpeg -i input.mp4 \
+#       -vf  "select='not(between(t,15,45))',  setpts=N/FRAME_RATE/TB" \
+#       -af "aselect='not(between(t,15,45))', asetpts=N/SR/TB" \
+#       output.mp4
+
+
+
+
+if (! defined  $ARGV[0]  || $ARGV[0] eq '?' || $ARGV[0] eq ''){
+  print "\n usage:\n";
+  print "     pc  filename -s starttime (optional) -e endtime (optional) -c cut_count (optional)\n";
+  print "     pc  filename -t starttime1 starttime2 starttimen\n";
+  print "     pc  filename -flip 'v'|'h'\n";
+  print "     pc  filename -a 16:9 (change aspect ratio)\n";
+  print "     pc  filename -ic fromtime totime (innercut in sec!)\n";
+
+  exit;
+}
+
+
+
+# catch all params
+my @ops=@ARGV;
+my %opts=();
+
+print "0: $ops[0]\n";  # filename
+print "1: $ops[1]\n";  # function
+print "2: $ops[2]\n";  # first function parameter
+print "3: $ops[3]\n"  if defined $ops[3];
+print "4: $ops[4]\n" if defined $ops[4];
+print "5: $ops[5]\n" if defined $ops[5];
+print "6: $ops[6]\n" if defined $ops[6];
+print "7: $ops[7]\n" if defined $ops[7];
+print "8: $ops[8]\n" if defined $ops[8];
+print "9: $ops[9]\n" if defined $ops[9];
+print "10: $ops[10]\n" if defined $ops[10];
+print "11: $ops[11]\n" if defined $ops[11];
+print "12: $ops[12]\n" if defined $ops[12];
+print "13: $ops[13]\n" if defined $ops[13];
+print "14: $ops[14]\n" if defined $ops[14];
+print "15: $ops[15]\n" if defined $ops[15];
+
+if (not defined  $ops[1]){
+  die "zu wenige Parameter";
+}
+
+
+
+$opts{$ops[1]} = $ops[2];
+print "$ops[1] ==> $ops[2]\n";
+if (defined  $ops[3]) {
+  $opts{$ops[3]} = $ops[4];
+};
+if (defined  $ops[5]) {
+  $opts{$ops[5]} = $ops[6];
+};
+if (defined  $ops[7]) {
+  $opts{$ops[7]} = $ops[8];
+};
+
+
+# Loop over timestamps
+if (defined $opts{-t}){$opts{t} = $opts{-t}};
+if (defined $opts{t} ){
+  print "Looping over timestamps !! \n";
+  my $cut_count=1;
+  my @ts =@ops;
+  my $dummy = shift(@ts); # file name
+  $dummy = shift(@ts);   # param -t
+  # add the 00:00 if missing
+  if (defined $ts[0] && $ts[0]  ne  '00:00') {
+    unshift(@ts, '00:00' );
+    print "00:00 added\n";
+  }
+  while (defined $ts[0] ){
+    $opts{s} = " -ss $ts[0]";
+    if (defined $ts[1]){
+      $opts{e} = " -to  $ts[1]";
+    }
+    else{
+       $opts{e} = "";
+    }
+    my $infile=$ops[0] ;
+    my $basefile = $infile;
+    $basefile =~ s/.mp4$//;
+    my $outfile = $basefile.'_cut'.$cut_count.'.mp4';
+    print "ffmpeg $opts{s}  $opts{e}  -i $infile  $outfile \n";
+    `ffmpeg $opts{s}  $opts{e}  -i "$infile"  "$outfile"`;
+    my $dummy = shift(@ts);
+     $cut_count ++;
+     print " $cut_count :  @ts \n"
+
+  }
+
+}
+else {
+
+
+# Flip horizontal/vertical
+if (defined $opts{-flip}){$opts{flip} = $opts{-flip};
+
+  print "==>$opts{flip}\n";
+
+  if  ($opts{flip} eq 'h'){$opts{flip}='-vf hflip'}; # horizontal flip
+  if  ($opts{flip} eq 'v'){$opts{flip}='-vf vflip'}; # vertical flip
+}
+if (not defined $opts{flip}){
+   $opts{flip} = '';
+}
+
+
+
+# Cut-Numbers
+if (defined $opts{-c}){$opts{c} = $opts{-c}};
+if (not defined $opts{c}){
+   $opts{c} = '';
+}
+
+# Innercut removes section in a movie
+if (defined $opts{-ic}){$opts{ic} = $opts{-ic};
+
+  $opts{ics} = $opts{ic}; #innercut start time
+  $opts{ice} = $ops[3];   #innercut end time
+
+
+  print "inner cut from $opts{ics} to $opts{ice}\n";
+
+# ffmpeg -i input.mp4 \
+#       -vf  "select='not(between(t,15,45))',  setpts=N/FRAME_RATE/TB" \
+#       -af "aselect='not(between(t,15,45))', asetpts=N/SR/TB" \
+#       output.mp4
+
+my $infile=$ops[0] ;
+my $basefile = $infile;
+$basefile =~ s/.mp4$//;
+my $outfile = $basefile.'_cut'.$opts{c}.'.mp4';
+
+
+  `ffmpeg -i "$infile" -vf "select='not(between(t,$opts{ics},$opts{ice}))',  setpts=N/FRAME_RATE/TB" -af "aselect=\'not(between(t,$opts{ics},$opts{ice}))\', asetpts=N/SR/TB" "$outfile"`;
+
+  exit 0;
+};
+
+# Aspect ratio (try 16:9)
+if (defined $opts{-a}){$opts{a} = $opts{-a}};
+if (defined $opts{a} || defined $opts{-a}){
+
+  $opts{a} = "-aspect $opts{a}";
+
+  print "$opts{a}\n";
+}
+else
+{
+  $opts{a} = ' -async 1 -strict -2 ';
+}
+
+#  starttime
+if (defined $opts{-s}){$opts{s} = $opts{-s}};
+if (not defined $opts{s} ){
+   $opts{s} = ' -ss 00:00';
+}
+else {
+  $opts{s} = " -ss $opts{s}";
+}
+#  endtime
+if (defined $opts{-e}){$opts{e} = $opts{-e}};
+if (defined $opts{e}){
+   $opts{e} = " -to  $opts{e}";
+}
+
+my $infile=$ops[0] ;
+my $basefile = $infile;
+$basefile =~ s/.mp4$//;
+my $outfile = $basefile.'_cut'.$opts{c}.'.mp4';
+
+my $starttime ='';
+my $endtime ='';
+
+if ($ops[1] eq '-s') {
+  print "starttime found (1)($ops[2] )\n";
+  $starttime = "-ss $ops[2]" ;
+}
+
+if (defined $ops[2] && $ops[1] eq '-e') {
+  print "endtime found (1 )($ops[2])\n";
+  $starttime = '-ss 00:00:00';
+  $endtime = "-to $ops[2]" ;
+}
+
+if (defined $ops[3]  && $ops[3] eq '-e') {
+  print "endtime found (3) ($ops[4])\n";
+  $endtime = "-to $ops[4]" ;
+}
+
+
+print "ffmpeg $opts{s}  $opts{e}  -i $infile   $opts{a} $opts{flip} $outfile\n";
+
+# ffmpeg -i $1 -ss 00:00:03 -to 00:00:08 -async 1 -strict -2 {$1_cut.mp4}
+`ffmpeg $opts{s}  $opts{e}  -i "$infile" $opts{a} $opts{flip}  "$outfile"`;
+}

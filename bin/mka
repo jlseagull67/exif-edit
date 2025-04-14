@@ -1,0 +1,5 @@
+#!/bin/bash
+
+name=$1
+echo $name
+cd ~/.aa/work; mkdir $name; cd ~/.aa/work/$name; pwd

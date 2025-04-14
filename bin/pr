@@ -1,0 +1,12 @@
+#!/bin/bash
+#folder="${1/\//}"
+folder=$1
+folder="${folder/\//}"
+echo $folder
+dpattern="__$folder"
+restpattern='_$1/'
+spattern='s/(.*)/'
+echo $spattern$dpattern$restpattern
+echo $pattern
+cd ~/.aa/work/$folder
+perl-rename "$spattern$dpattern$restpattern" *.mp4

@@ -1,0 +1,20 @@
+#!/bin/bash
+cd ~/.aa/work; 
+for dir in *; 
+do 
+  pr "$dir"; 
+  folder=$dir
+  folder="${folder/\//}"
+  echo $folder
+  dpattern="__$folder"
+  restpattern='_$1/'
+  spattern='s/(.*)/'
+  echo $spattern$dpattern$restpattern
+  echo $pattern
+  cd ~/.aa/work/$folder
+  perl-rename "$spattern$dpattern$restpattern" *.mp4
+
+  mkdir ~/.aa/work2
+  mv *.mp4 ~/.aa/work2
+done
+
