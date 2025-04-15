@@ -1,0 +1,38 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use X11::GUITest qw/
+    MoveMouseAbs
+    GetScreenRes
+/;
+use Time::HiRes qw(sleep);
+use POSIX qw(strftime);
+
+
+## Vorbereitung:
+# cpan X11::GUITest
+
+
+# Intervall in Sekunden
+my $INTERVAL = 1.0;
+
+# Bildschirmgröße
+my ($screen_width, $screen_height) = GetScreenRes();
+
+# Endlosschleife
+print "Bewege Maus zufällig. Beenden mit STRG+C\n";
+while (1) {
+    # Zufällige Koordinaten
+    my $x = int(rand($screen_width));
+    my $y = int(rand($screen_height));
+
+    # Zeitstempel (optional)
+    my $zeit = strftime("%H:%M:%S", localtime);
+    print "[$zeit] Bewege zu ($x, $y)\n";
+
+    # Bewegung
+    MoveMouseAbs($x, $y);
+
+    # Warten
+    sleep($INTERVAL);
+}
