@@ -1,0 +1,88 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Gtk3 '-init';
+
+# Bildpfade (bitte anpassen!)
+my $image1_path = '/home/joerg/Bilder/Apr2025/20250414_175507.JPG';
+my $image2_path = '/home/joerg/Bilder/Apr2025/20250414_180340.JPG';
+
+# CSS für Rahmen ein/aus
+my $css_provider = Gtk3::CssProvider->new;
+my $css_styles = <<'END_CSS';
+.thumbnail {
+    padding: 1px;
+}
+.thumbnail-focused {
+    border: 1px solid lightgreen;
+    padding: 1px;
+}
+END_CSS
+
+# CSS laden
+my $screen = Gtk3::Gdk::Screen::get_default;
+$css_provider->load_from_data($css_styles);
+Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, Gtk3::STYLE_PROVIDER_PRIORITY_USER);
+
+# Fenster
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title('Thumbnail-Fokus');
+$window->set_border_width(10);
+$window->set_default_size(600, 400);
+$window->signal_connect(delete_event => sub { Gtk3->main_quit });
+
+# VBox für Thumbnails und ggf. spätere Buttons
+my $vbox = Gtk3::Box->new('vertical', 10);
+$window->add($vbox);
+
+# HBox für die beiden Thumbnails
+my $hbox = Gtk3::Box->new('horizontal', 10);
+$vbox->pack_start($hbox, 1, 1, 0);
+
+# Erstellt ein EventBox-Thumbnail mit zugehörigem Bild
+sub create_thumbnail {
+    my ($file) = @_;
+    my $eventbox = Gtk3::EventBox->new;
+    $eventbox->get_style_context->add_class('thumbnail');
+
+    my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, 200, 200, 'TRUE');
+    my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
+    $eventbox->add($image);
+
+    return $eventbox;
+}
+
+# Thumbnails erzeugen
+my $thumb1 = create_thumbnail($image1_path);
+my $thumb2 = create_thumbnail($image2_path);
+
+# Hinzufügen
+$hbox->pack_start($thumb1, 1, 1, 0);
+$hbox->pack_start($thumb2, 1, 1, 0);
+
+# Fokus-Verwaltung
+my @thumbnails = ($thumb1, $thumb2);
+
+sub set_focus_on {
+    my ($focused) = @_;
+    foreach my $thumb (@thumbnails) {
+        my $ctx = $thumb->get_style_context;
+        $ctx->remove_class('thumbnail-focused');
+    }
+    $focused->get_style_context->add_class('thumbnail-focused');
+}
+
+# Klick-Events
+$thumb1->signal_connect(button_press_event => sub {
+    set_focus_on($thumb1);
+});
+$thumb2->signal_connect(button_press_event => sub {
+    set_focus_on($thumb2);
+});
+
+# Start mit Fokus auf erstes Bild
+set_focus_on($thumb1);
+
+# Alles anzeigen
+$window->show_all;
+Gtk3->main;
