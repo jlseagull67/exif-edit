@@ -63,8 +63,10 @@ $vbox_main->pack_start($scroll, TRUE, TRUE, 0);
 my $vbox_images = Gtk3::Box->new('vertical', 10);
 $scroll->add($vbox_images);
 
+#################################################################################
 # Todel-Funktion
 # Verschiebt alle Bilder mit Exif-Comment = todel in ein Unterverzeichnis
+#################################################################################
 sub todel_images {
     my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     my $exifTool = Image::ExifTool->new();
@@ -87,15 +89,18 @@ sub todel_images {
     &load_images;
 }
 
+#################################################################################
 # Lösche alle Widgets
+#################################################################################
 sub remove_widget {
     my ($widget) = @_;
     $vbox_images->remove($widget);
 }
-
 $vbox_images->foreach(\&remove_widget);  # Clear
 
+#################################################################################
 # Funktion zum Laden der Bilder
+#################################################################################
 sub load_images {
     $vbox_images->foreach(\&remove_widget);  # Clear
 
