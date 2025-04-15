@@ -187,7 +187,8 @@ sub load_images {
             return TRUE;
         });
 
-        my $label = Gtk3::Label->new($file);
+
+
         my $entry = Gtk3::Entry->new();
         $entry->set_text($comment);
 
@@ -199,13 +200,29 @@ sub load_images {
             return FALSE;
         });
 
+        # Da ein Klick auf den Dateinamen (Label) den Kommentar ändern soll, wird der Label erst nach dem Entry definiert
+        my $label = Gtk3::Label->new($file);
+        # signal-handler für Klick auf den Filenamen
+        my $labeleventbox = Gtk3::EventBox->new();
+        $labeleventbox->add($label);
+        $labeleventbox->add_events(['button-press-mask']);
+        $labeleventbox->signal_connect(button_press_event => sub {
+            print "gotcha \n";
+            $entry->set_text('todel');
+            my $tool = Image::ExifTool->new;
+            $tool->SetNewValue('Comment', 'todel');
+            $tool->WriteInfo($file);
+            return TRUE;
+        });
+
+
         # Alle Eventboxen im Array sammeln (für die Fokus Verwaltung)
         push (@eventboxes, $eventbox);
 
         # Container für Bild, Label, Entry
         my $vbox = Gtk3::Box->new('vertical', 5);
         $vbox->pack_start($eventbox, FALSE, FALSE, 0);
-        $vbox->pack_start($label, FALSE, FALSE, 0);
+        $vbox->pack_start($labeleventbox, FALSE, FALSE, 0);
         $vbox->pack_start($entry, FALSE, FALSE, 0);
 
         # Neue Zeile alle 6 Bilder
