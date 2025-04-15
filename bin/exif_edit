@@ -9,6 +9,34 @@ use Glib 'TRUE', 'FALSE';
 use File::Basename;
 use Image::ExifTool;
 
+#################################################################################
+# CSS für Fokus-Anzeige
+#################################################################################
+# CSS für Rahmen ein/aus
+my $css_provider = Gtk3::CssProvider->new;
+my $css_styles = <<'END_CSS';
+.thumbnail {
+    padding: 5px 5px 5px 5px;
+}
+.thumbnail-focused {
+    border: 1px solid lightgreen;
+    border-radius: 5px;
+    margin:  5px 5px 5px 5px;
+}
+END_CSS
+
+# CSS laden
+my $screen = Gtk3::Gdk::Screen::get_default;
+$css_provider->load_from_data($css_styles);
+Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, Gtk3::STYLE_PROVIDER_PRIORITY_USER);
+
+# Sammler für alle Eventboxen (über den wird bei Fokusänderung iteriert)
+my @eventboxes = ();
+
+
+#################################################################################
+# Fenster-Definition
+#################################################################################
 my $window = Gtk3::Window->new('toplevel');
 $window->set_title("EXIF Editor");
 $window->set_default_size(1600, 600);
@@ -18,11 +46,15 @@ my $monitor_width = Gtk3::Gdk::Display::get_default()
                   ->get_primary_monitor()
                   ->get_geometry()->{width};
 my $thumbsize = $monitor_width > 1920 ? 400 : $monitor_width == 1920 ? 300 : $monitor_width == 1440 ? 200 : 150;
+#$thumbsize = 150;
 
 my $vbox_main = Gtk3::Box->new('vertical', 0);
 $window->add($vbox_main);
 $window->maximize();
 
+#################################################################################
+# Menü-Definition
+#################################################################################
 # Accelerator-Gruppe für Shortcuts
 my $accel_group = Gtk3::AccelGroup->new();
 $window->add_accel_group($accel_group);
@@ -54,7 +86,9 @@ $menu_datei->append($menu_item_quit);
 
 $vbox_main->pack_start($menubar, FALSE, FALSE, 0);
 
-# Scrollbereich
+#################################################################################
+# Scrollbereich im Fenster
+#################################################################################
 my $scroll = Gtk3::ScrolledWindow->new();
 $scroll->set_policy('automatic', 'automatic');
 $vbox_main->pack_start($scroll, TRUE, TRUE, 0);
@@ -99,10 +133,26 @@ sub remove_widget {
 $vbox_images->foreach(\&remove_widget);  # Clear
 
 #################################################################################
+# Setzt den Fokus auf einen Container
+#################################################################################
+sub set_focus_on {
+    my ($focused) = @_;
+    foreach my $eventbox (@eventboxes) {
+        my $ctx = $eventbox->get_style_context;
+        $ctx->remove_class('thumbnail-focused');
+    }
+    $focused->get_style_context->add_class('thumbnail-focused');
+}
+
+
+
+#################################################################################
 # Funktion zum Laden der Bilder
 #################################################################################
 sub load_images {
     $vbox_images->foreach(\&remove_widget);  # Clear
+
+    @eventboxes = ();
 
     my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     my $row;
@@ -114,13 +164,16 @@ sub load_images {
 
         my $exifTool = Image::ExifTool->new;
         $exifTool->ExtractInfo($file);
+
         my $comment = $exifTool->GetValue('Comment', 'PrintConv') // '';
 
-        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize, TRUE);
+        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize-20, $thumbsize-20, TRUE);
         my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
+        $image->get_style_context->add_class('thumbnail');
 
         # Pack image into an EventBox to allow mouse interaction
         my $eventbox = Gtk3::EventBox->new();
+
         $eventbox->add($image);
 
         $eventbox->add_events(['button-press-mask']);
@@ -131,6 +184,7 @@ sub load_images {
             } elsif ($event->button == 3) {
                 system("gimp \"$file\" &");
             }
+            set_focus_on($eventbox);
             return TRUE;
         });
 
@@ -146,6 +200,8 @@ sub load_images {
             return FALSE;
         });
 
+        # Alle Eventboxen im Array sammeln (für die Fokus Verwaltung)
+        push (@eventboxes, $eventbox);
 
         # Container für Bild, Label, Entry
         my $vbox = Gtk3::Box->new('vertical', 5);
@@ -171,8 +227,6 @@ $menu_item_quit->signal_connect(activate => sub { Gtk3->main_quit });
 
 load_images();
 
-# Connect the destroy signal to exit the application
-$window->signal_connect(destroy => sub { Gtk3::main_quit() });
 
 $window->show_all();
 Gtk3->main();

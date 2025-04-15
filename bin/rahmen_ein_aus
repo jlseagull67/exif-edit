@@ -11,11 +11,12 @@ my $image2_path = '/home/joerg/Bilder/Apr2025/20250414_180340.JPG';
 my $css_provider = Gtk3::CssProvider->new;
 my $css_styles = <<'END_CSS';
 .thumbnail {
-    padding: 1px;
+    padding: 10px 10px 10px 10px;
 }
 .thumbnail-focused {
     border: 1px solid lightgreen;
-    padding: 1px;
+    border-radius: 40px;
+    padding: 10px 10px 10px 10px;
 }
 END_CSS
 
@@ -45,7 +46,7 @@ sub create_thumbnail {
     my $eventbox = Gtk3::EventBox->new;
     $eventbox->get_style_context->add_class('thumbnail');
 
-    my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, 200, 200, 'TRUE');
+    my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, 300, 300, 'TRUE');
     my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
     $eventbox->add($image);
 
@@ -81,7 +82,7 @@ $thumb2->signal_connect(button_press_event => sub {
 });
 
 # Start mit Fokus auf erstes Bild
-set_focus_on($thumb1);
+#set_focus_on($thumb1);
 
 # Alles anzeigen
 $window->show_all;
