@@ -144,8 +144,6 @@ sub set_focus_on {
     $focused->get_style_context->add_class('thumbnail-focused');
 }
 
-
-
 #################################################################################
 # Funktion zum Laden der Bilder
 #################################################################################
@@ -161,7 +159,6 @@ sub load_images {
 
     foreach my $file (@images) {
 
-
         my $exifTool = Image::ExifTool->new;
         $exifTool->ExtractInfo($file);
 
@@ -169,6 +166,8 @@ sub load_images {
 
         my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize-20, $thumbsize-20, TRUE);
         my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
+
+        # CSS-Style auf das Image legen (nicht auf die Eventbox !)
         $image->get_style_context->add_class('thumbnail');
 
         # Pack image into an EventBox to allow mouse interaction
