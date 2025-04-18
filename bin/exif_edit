@@ -199,8 +199,9 @@ sub load_images {
 
     foreach my $file (@images) {
 
-
-        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize-20, TRUE);
+        #######################
+        ## Image
+        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize, TRUE);
         my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
 
         # CSS-Style for image (not for $imageeventbox !)
@@ -208,9 +209,7 @@ sub load_images {
 
         # Pack image into an EventBox to allow mouse interaction
         my $imageeventbox = Gtk3::EventBox->new();
-
         $imageeventbox->add($image);
-
         $imageeventbox->add_events(['button-press-mask']);
         $imageeventbox->signal_connect(button_press_event => sub {
             my ($widget, $event) = @_;
@@ -223,6 +222,7 @@ sub load_images {
             return TRUE;
         });
 
+        #######################
         ## EXIF "Comment"
         my $exifTool = Image::ExifTool->new;
         $exifTool->ExtractInfo($file);
@@ -237,7 +237,8 @@ sub load_images {
             return FALSE;
         });
 
-        # File Name Label
+        #######################
+        ## File Name Label
         my $label = Gtk3::Label->new($file);
         # signal-handler for click on file label
         my $labeleventbox = Gtk3::EventBox->new();
