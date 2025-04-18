@@ -184,7 +184,7 @@ sub set_focus_on {
 }
 
 #################################################################################
-# Funktion zum Laden der Bilder
+# Function to load objects for to display Image, Label, Comment
 #################################################################################
 sub load_images {
     $vbox_images->foreach(\&remove_widget);  # Clear
@@ -221,6 +221,8 @@ sub load_images {
             set_focus_on($imageeventbox);
             return TRUE;
         });
+        # Collect all eventboxes (for focus management)
+        push (@imageeventboxes, $imageeventbox);
 
         #######################
         ## EXIF "Comment"
@@ -252,9 +254,6 @@ sub load_images {
             return TRUE;
         });
 
-
-        # Alle Eventboxen im Array sammeln (für die Fokus Verwaltung)
-        push (@imageeventboxes, $imageeventbox);
 
         # Container für Bild, Label, Entry
         my $vbox = Gtk3::Box->new('vertical', 5);
