@@ -31,7 +31,7 @@ $css_provider->load_from_data($css_styles);
 Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, Gtk3::STYLE_PROVIDER_PRIORITY_USER);
 
 # Sammler für alle Eventboxen (über den wird bei Fokusänderung iteriert)
-my @eventboxes = ();
+my @imageeventboxes = ();
 
 
 #################################################################################
@@ -176,8 +176,8 @@ $vbox_images->foreach(\&remove_widget);  # Clear
 #################################################################################
 sub set_focus_on {
     my ($focused) = @_;
-    foreach my $eventbox (@eventboxes) {
-        my $ctx = $eventbox->get_style_context;
+    foreach my $imageeventbox (@imageeventboxes) {
+        my $ctx = $imageeventbox->get_style_context;
         $ctx->remove_class('thumbnail-focused');
     }
     $focused->get_style_context->add_class('thumbnail-focused');
@@ -189,7 +189,7 @@ sub set_focus_on {
 sub load_images {
     $vbox_images->foreach(\&remove_widget);  # Clear
 
-    @eventboxes = ();
+    @imageeventboxes = ();
 
     my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     @images = sort @images;
@@ -199,71 +199,67 @@ sub load_images {
 
     foreach my $file (@images) {
 
-        my $exifTool = Image::ExifTool->new;
-        $exifTool->ExtractInfo($file);
-
-        my $comment = $exifTool->GetValue('Comment', 'PrintConv') // '';
 
         my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize-20, TRUE);
         my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
 
-        # CSS-Style auf das Image legen (nicht auf die Eventbox !)
+        # CSS-Style for image (not for $imageeventbox !)
         $image->get_style_context->add_class('thumbnail');
 
         # Pack image into an EventBox to allow mouse interaction
-        my $eventbox = Gtk3::EventBox->new();
+        my $imageeventbox = Gtk3::EventBox->new();
 
-        $eventbox->add($image);
+        $imageeventbox->add($image);
 
-        $eventbox->add_events(['button-press-mask']);
-        $eventbox->signal_connect(button_press_event => sub {
+        $imageeventbox->add_events(['button-press-mask']);
+        $imageeventbox->signal_connect(button_press_event => sub {
             my ($widget, $event) = @_;
             if ($event->button == 1) {
                 system("firefox \"$file\" &");
             } elsif ($event->button == 3) {
                 system("gimp \"$file\" &");
             }
-            set_focus_on($eventbox);
+            set_focus_on($imageeventbox);
             return TRUE;
         });
 
-
-
-        my $entry = Gtk3::Entry->new();
-        $entry->set_text($comment);
-
-        $entry->signal_connect(focus_out_event => sub {
-            my $new_comment = $entry->get_text();
+        ## EXIF "Comment"
+        my $exifTool = Image::ExifTool->new;
+        $exifTool->ExtractInfo($file);
+        my $comment = $exifTool->GetValue('Comment', 'PrintConv') // '';
+        my $commententry = Gtk3::Entry->new();
+        $commententry->set_text($comment);
+        $commententry->signal_connect(focus_out_event => sub {
+            my $new_comment = $commententry->get_text();
             my $tool = Image::ExifTool->new;
             $tool->SetNewValue('Comment', $new_comment);
             $tool->WriteInfo($file);
             return FALSE;
         });
 
-        # Da ein Klick auf den Dateinamen (Label) den Kommentar ändern soll, wird der Label erst nach dem Entry definiert
+        # File Name Label
         my $label = Gtk3::Label->new($file);
-        # signal-handler für Klick auf den Filenamen
+        # signal-handler for click on file label
         my $labeleventbox = Gtk3::EventBox->new();
         $labeleventbox->add($label);
         $labeleventbox->add_events(['button-press-mask']);
         $labeleventbox->signal_connect(button_press_event => sub {
             print "gotcha \n";
-            $entry->set_text('todel');
-            my $tool = Image::ExifTool->new;
-            $tool->SetNewValue('Comment', 'todel');
-            $tool->WriteInfo($file);
+            $commententry->set_text('todel');
+            $exifTool->SetNewValue('Comment', 'todel');
+            $exifTool->WriteInfo($file);
             return TRUE;
         });
 
 
         # Alle Eventboxen im Array sammeln (für die Fokus Verwaltung)
-        push (@eventboxes, $eventbox);
+        push (@imageeventboxes, $imageeventbox);
 
         # Container für Bild, Label, Entry
         my $vbox = Gtk3::Box->new('vertical', 5);
-        $vbox->pack_start($eventbox, FALSE, FALSE, 0);
+        $vbox->pack_start($imageeventbox, FALSE, FALSE, 0);
         $vbox->pack_start($labeleventbox, FALSE, FALSE, 0);
-        $vbox->pack_start($entry, FALSE, FALSE, 0);
+        $vbox->pack_start($commententry, FALSE, FALSE, 0);
 
         # Neue Zeile alle 6 Bilder
         if ($i % 6 == 0) {
