@@ -153,6 +153,7 @@ sub load_images {
     @eventboxes = ();
 
     my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
+    @images = sort @images;
     my $row;
     my $col;
     my $i = 0;
@@ -164,7 +165,7 @@ sub load_images {
 
         my $comment = $exifTool->GetValue('Comment', 'PrintConv') // '';
 
-        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize-20, $thumbsize-20, TRUE);
+        my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize-20, TRUE);
         my $image = Gtk3::Image->new_from_pixbuf($pixbuf);
 
         # CSS-Style auf das Image legen (nicht auf die Eventbox !)
