@@ -110,7 +110,14 @@ $menu_item_manual->signal_connect(activate => \&open_manual_window);
 $menu_item_manual->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_h, ['control-mask'], 'visible');
 $menu_help->append($menu_item_manual);
 
-
+##################################
+# Menue Help
+##################################
+# Manual
+my $menu_item_about = Gtk3::MenuItem->new_with_label("Über das Programm");
+$menu_item_about->signal_connect(activate => \&open_about_window);
+#$menu_item_manual->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_h, ['control-mask'], 'visible');
+$menu_help->append($menu_item_about);
 
 # add to menuebar
 $menubar->append($menu_item_help);
@@ -280,8 +287,9 @@ load_images();
 $window->show_all();
 Gtk3->main();
 
-
+#################################################################################
 ## Hilfefenster - Anleitung
+#################################################################################
 sub open_manual_window {
     my $top = Gtk3::Window->new('toplevel');
     $top->set_title("Textfenster");
@@ -316,6 +324,56 @@ END_manual
     # Text setzen
     my $buffer = $textview->get_buffer;
     $buffer->set_text($manual_txt);
+
+    $scrolled_win->add($textview);
+    $vbox->pack_start($scrolled_win, TRUE, TRUE, 0);
+
+    # Schließen-Button
+    my $close_button = Gtk3::Button->new("Schließen");
+    $close_button->signal_connect(clicked => sub { $top->destroy });
+    $vbox->pack_start($close_button, FALSE, FALSE, 0);
+
+    $top->show_all;
+}
+
+#################################################################################
+## About Fenster
+#################################################################################
+sub open_about_window {
+    my $top = Gtk3::Window->new('toplevel');
+    $top->set_title("Textfenster");
+    $top->set_default_size(400, 300);
+    $top->set_position('center');
+
+
+    my $about_txt = <<'END_about';
+* Dieses Programm schreibt Kommentare zu Bildern als EXIF-Tag "Comment".
+
+Ich übernehme für das Programm keine Garantie. Es kann frei geändert oder weitergegeben werden unter den selben Bedingungen wie Perl selbst.
+
+Wenn dir das Programm gefällt freue ich mich über eine Spende.
+
+ Jörg Albrecht
+ IBAN DE93 5001 0517 5436 0360 49
+
+END_about
+
+    my $vbox = Gtk3::Box->new('vertical', 5);
+    $vbox->set_border_width(10);
+    $top->add($vbox);
+
+    # Scrollbares Textfeld
+    my $scrolled_win = Gtk3::ScrolledWindow->new;
+    $scrolled_win->set_policy('automatic', 'automatic');
+
+    my $textview = Gtk3::TextView->new;
+    $textview->set_editable(0);      # Nicht editierbar
+    $textview->set_cursor_visible(0);# Cursor nicht anzeigen
+    $textview->set_wrap_mode('word');# Text umbrechen
+
+    # Text setzen
+    my $buffer = $textview->get_buffer;
+    $buffer->set_text($about_txt);
 
     $scrolled_win->add($textview);
     $vbox->pack_start($scrolled_win, TRUE, TRUE, 0);
