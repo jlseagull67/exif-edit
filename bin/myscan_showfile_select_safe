@@ -48,20 +48,24 @@ $drawing_area->signal_connect(draw => sub {
             $h = -$h;
         }
 
-        # Auswahl zeichnen
-        $cr->set_source_rgba(1, 0, 0, 0.4); # halbtransparent rot
+        # selection filling
+        $cr->set_source_rgba(0, 0, 0, 0); # r, g, b, transparency
         $cr->rectangle($x, $y, $w, $h);
         $cr->fill_preserve;
 
-        $cr->set_source_rgb(1, 0, 0); # rote Linie
-        $cr->set_line_width(2);
+        # selection line
+        $cr->set_source_rgb(1, 0, 0); # white line
+        $cr->set_line_width(0.5);
         $cr->stroke;
 
-        # === NEU: Text (Breite x Höhe) ===
-        my $text = "${w}×${h}px";
+        # coordinates
+        #my $text = "${w}×${h}px";
+        my $x_coord = int(${w});
+        my $y_coord = int(${h});
+        my $text = "$x_coord x $y_coord px";
 
         $cr->select_font_face('Sans', 'normal', 'normal');
-        $cr->set_font_size(16);
+        $cr->set_font_size(10);
         $cr->set_source_rgb(1, 1, 1);  # Weißer Text
         $cr->move_to($x + 5, $y - 5 > 0 ? $y - 5 : $y + 20);
         $cr->show_text($text);
