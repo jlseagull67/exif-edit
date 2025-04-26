@@ -18,10 +18,13 @@ $window->signal_connect(destroy => sub { Gtk3->main_quit });
 $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file('deinbild.png');
 $surface = create_surface_from_pixbuf($pixbuf);
 
+my $hbox = Gtk3::Box->new('horizontal', 10);
+$window->add($hbox);
+
 # DrawingArea
 my $drawing_area = Gtk3::DrawingArea->new;
 $drawing_area->set_size_request($pixbuf->get_width, $pixbuf->get_height);
-$window->add($drawing_area);
+$hbox->add($drawing_area);
 
 # Zeichen-Callback
 $drawing_area->signal_connect(draw => sub {
@@ -54,7 +57,7 @@ $drawing_area->signal_connect(draw => sub {
         $cr->fill_preserve;
 
         # selection line
-        $cr->set_source_rgb(1, 0, 0); # white line
+        $cr->set_source_rgb(1, 0, 0); # red line
         $cr->set_line_width(0.5);
         $cr->stroke;
 
@@ -66,7 +69,7 @@ $drawing_area->signal_connect(draw => sub {
 
         $cr->select_font_face('Sans', 'normal', 'normal');
         $cr->set_font_size(10);
-        $cr->set_source_rgb(1, 1, 1);  # Weißer Text
+        $cr->set_source_rgb(1, 1, 1);  # white Text
         $cr->move_to($x + 5, $y - 5 > 0 ? $y - 5 : $y + 20);
         $cr->show_text($text);
     }

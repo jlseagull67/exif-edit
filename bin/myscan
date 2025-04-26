@@ -3,72 +3,132 @@ use strict;
 use warnings;
 use Gtk3 -init;
 use Glib qw(TRUE FALSE);
-use Image::Magick;
-#use Gtk3::Gdk::Pixbuf;
+#use Image::Magick;
 use File::Temp qw(tempfile);
+use Cairo;
 
-# GUI
+
+
+#################################################################################
+# Main Window definition
+#################################################################################
 my $window = Gtk3::Window->new('toplevel');
 $window->set_title('Epson DS-6500 Scan Tool');
 $window->set_default_size(900, 600);
 $window->signal_connect(delete_event => sub { Gtk3->main_quit });
 
+
+#################################################################################
+# drawing area definition
+#################################################################################
 my $hbox = Gtk3::Box->new('horizontal', 10);
 $window->add($hbox);
 
+# Variables
+my ($pixbuf, $surface, $start_x, $start_y, $end_x, $end_y, $selecting);
+
+# Bild laden
+$pixbuf = Gtk3::Gdk::Pixbuf->new_from_file('deinbild.png');
+$surface = create_surface_from_pixbuf($pixbuf);
+
 my $drawing_area = Gtk3::DrawingArea->new;
 $drawing_area->set_size_request(500, 600);
-$hbox->pack_start($drawing_area, TRUE, TRUE, 0);
+$hbox->add($drawing_area);
 
-# Bilddaten
-my $pixbuf;
-my $image_full;
-my ($start_x, $start_y, $end_x, $end_y);
-my $rect_defined = FALSE;
-
-# Events für Mausauswahl
-$drawing_area->add_events(['button-press-mask', 'button-release-mask', 'pointer-motion-mask']);
-$drawing_area->signal_connect(button_press_event => sub {
-    my ($area, $event) = @_;
-    $start_x = $event->x;
-    $start_y = $event->y;
-    $rect_defined = FALSE;
-    return TRUE;
-});
-$drawing_area->signal_connect(motion_notify_event => sub {
-    my ($area, $event) = @_;
-    $end_x = $event->x;
-    $end_y = $event->y;
-    $drawing_area->queue_draw;
-    return TRUE;
-});
-$drawing_area->signal_connect(button_release_event => sub {
-    my ($area, $event) = @_;
-    $end_x = $event->x;
-    $end_y = $event->y;
-    $rect_defined = TRUE;
-    $drawing_area->queue_draw;
-    return TRUE;
-});
+# Zeichen-Callback
 $drawing_area->signal_connect(draw => sub {
-    my ($area, $cr) = @_;
-    return unless $pixbuf;
-    Gtk3::Gdk::Cairo::set_source_pixbuf($cr, $pixbuf, 0, 0);
+    my ($widget, $cr) = @_;
+
+    # Bild zeichnen
+    $cr->set_source_surface($surface, 0, 0);
     $cr->paint;
-    if ($rect_defined) {
-        $cr->set_source_rgb(1, 0, 0);
-        $cr->set_line_width(2);
-        my $x = $start_x < $end_x ? $start_x : $end_x;
-        my $y = $start_y < $end_y ? $start_y : $end_y;
-        my $w = abs($end_x - $start_x);
-        my $h = abs($end_y - $start_y);
+
+    ## dummy-Rechteck zeichnen
+    #$start_x = 100;
+    #$start_y = 100;
+    #$end_x = 200;
+    #$end_y = 200;
+
+
+    # Rechteck zeichnen, falls vorhanden
+    if (defined $start_x && defined $start_y && defined $end_x && defined $end_y) {
+        my $x = $start_x;
+        my $y = $start_y;
+        my $w = $end_x - $start_x;
+        my $h = $end_y - $start_y;
+
+        # Korrigieren bei negativen Werten
+        if ($w < 0) {
+            $x += $w;
+            $w = -$w;
+        }
+        if ($h < 0) {
+            $y += $h;
+            $h = -$h;
+        }
+
+        # selection filling
+        $cr->set_source_rgba(0, 0, 0, 0); # r, g, b, transparency
         $cr->rectangle($x, $y, $w, $h);
+        $cr->fill_preserve;
+
+        # selection line
+        $cr->set_source_rgb(1, 0, 0); # red line
+        $cr->set_line_width(0.5);
         $cr->stroke;
+
+        # coordinates
+        #my $text = "${w}×${h}px";
+        my $x_coord = int(${w});
+        my $y_coord = int(${h});
+        my $text = "$x_coord x $y_coord px";
+
+        $cr->select_font_face('Sans', 'normal', 'normal');
+        $cr->set_font_size(10);
+        $cr->set_source_rgb(1, 1, 1);  # white Text
+        $cr->move_to($x + 5, $y - 5 > 0 ? $y - 5 : $y + 20);
+        $cr->show_text($text);
     }
     return FALSE;
 });
 
-# Rechte Seite GUI
+################################
+# Mouse Events for selection
+################################
+$drawing_area->add_events(['button-press-mask', 'button-release-mask', 'pointer-motion-mask']);
+
+$drawing_area->signal_connect(button_press_event => sub {
+    my ($widget, $event) = @_;
+    $selecting = 1;
+    $start_x = $end_x = $event->x;
+    $start_y = $end_y = $event->y;
+    $drawing_area->queue_draw;
+    return TRUE;
+});
+
+$drawing_area->signal_connect(motion_notify_event => sub {
+    my ($widget, $event) = @_;
+    if ($selecting) {
+        $end_x = $event->x;
+        $end_y = $event->y;
+        $drawing_area->queue_draw;
+    }
+    return TRUE;
+});
+
+$drawing_area->signal_connect(button_release_event => sub {
+    my ($widget, $event) = @_;
+    $selecting = 0;
+    $drawing_area->queue_draw;
+    save_selection();
+    return TRUE;
+});
+
+
+
+#################################################################################
+# action box definition
+#################################################################################
 my $settings = Gtk3::Box->new('vertical', 10);
 $hbox->pack_start($settings, FALSE, FALSE, 10);
 
@@ -112,70 +172,67 @@ $scan_btn->signal_connect(clicked => sub {
     #scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 --all-option
 
     my ($fh, $filename) = tempfile(SUFFIX => '.pnm', UNLINK => 0);
-    #my $cmd = "scanimage --format=pnm --resolution $res --mode $mode --source \"$source\" > $filename";
-    #system($cmd) == 0 or die "Scan fehlgeschlagen: $!";
+    my $cmd = "scanimage --format=pnm --resolution $res --mode $mode --source \"$source\" > $filename";
+    system($cmd) == 0 or die "Scan fehlgeschlagen: $!";
 
-    open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
-     # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
-    my $pid = open(my $scan, '-|', 'scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20',
-        '--format=pnm',
-        '--resolution', $res,
-        '--mode', $mode,
-        '--source', $source,
-    ) or die "Scan fehlgeschlagen: $!";
-    while (read($scan, my $buffer, 4096)) {
-        print $out $buffer;
-    }
-    close $scan;
-    close $out;
+#     open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
+#      # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
+#     my $pid = open(my $scan, '-|', 'scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20',
+#         '--format=pnm',
+#         '--resolution', $res,
+#         '--mode', $mode,
+#         '--source', $source,
+#     ) or die "Scan fehlgeschlagen: $!";
+#     while (read($scan, my $buffer, 4096)) {
+#         print $out $buffer;
+#     }
+#     close $scan;
+#     close $out;
 
+    # Bild laden
+$pixbuf = Gtk3::Gdk::Pixbuf->new_from_file($filename);
+$surface = create_surface_from_pixbuf($pixbuf);
 
-    $image_full = Image::Magick->new;
-    $image_full->Read($filename);
+#    $image_full = Image::Magick->new;
+#    $image_full->Read($filename);
 
     $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_size($filename, 500, 600);
     $drawing_area->queue_draw;
 });
 
-# Speicher-Button
-$save_btn->signal_connect(clicked => sub {
-    return unless $rect_defined && $image_full;
 
-    my $dialog = Gtk3::FileChooserDialog->new(
-        'Ausschnitt speichern',
-        $window,
-        'save',
-        'gtk-cancel' => 'cancel',
-        'gtk-save'   => 'accept',
-    );
-    $dialog->set_do_overwrite_confirmation(TRUE);
-    my $filter = Gtk3::FileFilter->new;
-    $filter->set_name('PNG-Bilder');
-    $filter->add_pattern('*.png');
-    $dialog->add_filter($filter);
-
-    if ($dialog->run eq 'accept') {
-        my $filename = $dialog->get_filename;
-
-        my $x = $start_x < $end_x ? $start_x : $end_x;
-        my $y = $start_y < $end_y ? $start_y : $end_y;
-        my $w = abs($end_x - $start_x);
-        my $h = abs($end_y - $start_y);
-
-        my ($iw, $ih) = $image_full->Get('width', 'height');
-        my $scale_x = $iw / 500;
-        my $scale_y = $ih / 600;
-
-        $image_full->Crop(
-            width  => int($w * $scale_x),
-            height => int($h * $scale_y),
-            x      => int($x * $scale_x),
-            y      => int($y * $scale_y),
-        );
-        $image_full->Write(filename => $filename);
-    }
-    $dialog->destroy;
-});
 
 $window->show_all;
 Gtk3->main;
+
+# ========================
+# Hilfsfunktionen
+# ========================
+
+sub create_surface_from_pixbuf {
+    my ($pixbuf) = @_;
+    my $w = $pixbuf->get_width;
+    my $h = $pixbuf->get_height;
+
+    # Erstelle eine Cairo-ImageSurface
+    my $surface = Cairo::ImageSurface->create('argb32', $w, $h);
+    my $cr = Cairo::Context->create($surface);
+
+    # Zeichne Pixbuf auf Surface
+    my $pixels = $pixbuf->get_pixels;
+    my $rowstride = $pixbuf->get_rowstride;
+    my $n_channels = $pixbuf->get_n_channels;
+
+    for my $y (0 .. $h - 1) {
+        for my $x (0 .. $w - 1) {
+            my $p = substr($pixels, $y * $rowstride + $x * $n_channels, $n_channels);
+            my ($r, $g, $b, $a) = map { ord($_) / 255 } split(//, $p);
+            $a = 1 unless defined $a;  # PNGs ohne Alpha
+
+            $cr->set_source_rgba($r, $g, $b, $a);
+            $cr->rectangle($x, $y, 1, 1);
+            $cr->fill;
+        }
+    }
+    return $surface;
+}
