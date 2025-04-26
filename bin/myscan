@@ -100,7 +100,7 @@ $drawing_area->signal_connect(draw => sub {
 
         $cr->select_font_face('Sans', 'normal', 'normal');
         $cr->set_font_size(10);
-        $cr->set_source_rgb(1, 1, 1);  # white Text
+        $cr->set_source_rgb(1, 0, 0);  # red text
         $cr->move_to($x + 5, $y - 5 > 0 ? $y - 5 : $y + 20);
         $cr->show_text($text);
     }
@@ -135,7 +135,6 @@ $drawing_area->signal_connect(button_release_event => sub {
     my ($widget, $event) = @_;
     $selecting = 0;
     $drawing_area->queue_draw;
-    save_selection();
     return TRUE;
 });
 
@@ -176,25 +175,21 @@ $source_combo->set_active(0);
 $settingsbox->pack_start(Gtk3::Label->new('Quelle:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($source_combo, FALSE, FALSE, 0);
 
+# Scan Button
 my $scan_btn = Gtk3::Button->new_with_label('Scan starten');
 $settingsbox->pack_start($scan_btn, FALSE, FALSE, 10);
 
-my $save_btn = Gtk3::Button->new_with_label('Ausschnitt speichern');
-$settingsbox->pack_start($save_btn, FALSE, FALSE, 10);
-
-# Scan-Button
 $scan_btn->signal_connect(clicked => sub {
     my $mode = $color_combo->get_active_text;
     my $res = $res_combo->get_active_text eq 'spezial' ? 150 : $res_combo->get_active_text;
     my $source = $source_combo->get_active_text;
 
-    # Kommando bauen
+    # build the command
 
+    # These are the commands, that our scanner accepts:
     #scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 --all-option
 
     my ($fh, $filename) = tempfile(SUFFIX => '.pnm', UNLINK => 0);
-#    my $cmd = "scanimage --format=pnm --resolution $res --mode $mode --source \"$source\" > $filename";
-#    system($cmd) == 0 or die "Scan fehlgeschlagen: $!";
 
     open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
      # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
@@ -211,8 +206,8 @@ $scan_btn->signal_connect(clicked => sub {
     close $out;
 
     # Bild laden
-$pixbuf = Gtk3::Gdk::Pixbuf->new_from_file($filename);
-$surface = create_surface_from_pixbuf($pixbuf);
+    $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file($filename);
+    $surface = create_surface_from_pixbuf($pixbuf);
 
 #    $image_full = Image::Magick->new;
 #    $image_full->Read($filename);
@@ -222,7 +217,17 @@ $surface = create_surface_from_pixbuf($pixbuf);
 });
 
 
+my $save_btn = Gtk3::Button->new_with_label('Ausschnitt speichern');
+$settingsbox->pack_start($save_btn, FALSE, FALSE, 10);
 
+$save_btn->signal_connect(clicked => sub {
+    save_selection()
+});
+
+
+#################################################################################
+# show all and main loop
+#################################################################################
 $window->show_all;
 Gtk3->main;
 
@@ -256,4 +261,32 @@ sub create_surface_from_pixbuf {
         }
     }
     return $surface;
+}
+
+
+sub save_selection {
+
+    print "gotcha in save_selection\n";
+
+    my $x = int($start_x < $end_x ? $start_x : $end_x);
+    my $y = int($start_y < $end_y ? $start_y : $end_y);
+    my $w = abs($end_x - $start_x);
+    my $h = abs($end_y - $start_y);
+
+    return if ($w <= 0 || $h <= 0);
+
+    my $subpixbuf = $pixbuf->new_subpixbuf($x, $y, $w, $h);
+
+    my $dialog = Gtk3::FileChooserDialog->new(
+        'Speichern unter', $window,
+        'save',
+        'gtk-cancel' => 'cancel',
+        'gtk-save'   => 'accept',
+    );
+
+    if ($dialog->run eq 'accept') {
+        my $filename = $dialog->get_filename;
+        $subpixbuf->save($filename, 'png');
+    }
+    $dialog->destroy;
 }
