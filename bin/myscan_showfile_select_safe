@@ -1,0 +1,160 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Glib 'TRUE', 'FALSE';
+use Gtk3 -init;
+use Cairo;
+
+# Variablen
+my ($pixbuf, $surface, $start_x, $start_y, $end_x, $end_y, $selecting);
+
+# Fenster
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title('PNG Auswahl-Tool');
+$window->set_default_size(800, 600);
+$window->signal_connect(destroy => sub { Gtk3->main_quit });
+
+# Bild laden
+$pixbuf = Gtk3::Gdk::Pixbuf->new_from_file('deinbild.png');
+$surface = create_surface_from_pixbuf($pixbuf);
+
+# DrawingArea
+my $drawing_area = Gtk3::DrawingArea->new;
+$drawing_area->set_size_request($pixbuf->get_width, $pixbuf->get_height);
+$window->add($drawing_area);
+
+# Zeichen-Callback
+$drawing_area->signal_connect(draw => sub {
+    my ($widget, $cr) = @_;
+
+    # Bild zeichnen
+    $cr->set_source_surface($surface, 0, 0);
+    $cr->paint;
+
+    # Rechteck zeichnen, falls vorhanden
+    if (defined $start_x && defined $start_y && defined $end_x && defined $end_y) {
+        my $x = $start_x;
+        my $y = $start_y;
+        my $w = $end_x - $start_x;
+        my $h = $end_y - $start_y;
+
+        # Korrigieren bei negativen Werten
+        if ($w < 0) {
+            $x += $w;
+            $w = -$w;
+        }
+        if ($h < 0) {
+            $y += $h;
+            $h = -$h;
+        }
+
+        # Auswahl zeichnen
+        $cr->set_source_rgba(1, 0, 0, 0.4); # halbtransparent rot
+        $cr->rectangle($x, $y, $w, $h);
+        $cr->fill_preserve;
+
+        $cr->set_source_rgb(1, 0, 0); # rote Linie
+        $cr->set_line_width(2);
+        $cr->stroke;
+
+        # === NEU: Text (Breite x Höhe) ===
+        my $text = "${w}×${h}px";
+
+        $cr->select_font_face('Sans', 'normal', 'normal');
+        $cr->set_font_size(16);
+        $cr->set_source_rgb(1, 1, 1);  # Weißer Text
+        $cr->move_to($x + 5, $y - 5 > 0 ? $y - 5 : $y + 20);
+        $cr->show_text($text);
+    }
+    return FALSE;
+});
+
+
+# Maus-Events
+$drawing_area->add_events(['button-press-mask', 'button-release-mask', 'pointer-motion-mask']);
+
+$drawing_area->signal_connect(button_press_event => sub {
+    my ($widget, $event) = @_;
+    $selecting = 1;
+    $start_x = $end_x = $event->x;
+    $start_y = $end_y = $event->y;
+    $drawing_area->queue_draw;
+    return TRUE;
+});
+
+$drawing_area->signal_connect(motion_notify_event => sub {
+    my ($widget, $event) = @_;
+    if ($selecting) {
+        $end_x = $event->x;
+        $end_y = $event->y;
+        $drawing_area->queue_draw;
+    }
+    return TRUE;
+});
+
+$drawing_area->signal_connect(button_release_event => sub {
+    my ($widget, $event) = @_;
+    $selecting = 0;
+    $drawing_area->queue_draw;
+    save_selection();
+    return TRUE;
+});
+
+$window->show_all;
+Gtk3->main;
+
+# ========================
+# Hilfsfunktionen
+# ========================
+
+sub create_surface_from_pixbuf {
+    my ($pixbuf) = @_;
+    my $w = $pixbuf->get_width;
+    my $h = $pixbuf->get_height;
+
+    # Erstelle eine Cairo-ImageSurface
+    my $surface = Cairo::ImageSurface->create('argb32', $w, $h);
+    my $cr = Cairo::Context->create($surface);
+
+    # Zeichne Pixbuf auf Surface
+    my $pixels = $pixbuf->get_pixels;
+    my $rowstride = $pixbuf->get_rowstride;
+    my $n_channels = $pixbuf->get_n_channels;
+
+    for my $y (0 .. $h - 1) {
+        for my $x (0 .. $w - 1) {
+            my $p = substr($pixels, $y * $rowstride + $x * $n_channels, $n_channels);
+            my ($r, $g, $b, $a) = map { ord($_) / 255 } split(//, $p);
+            $a = 1 unless defined $a;  # PNGs ohne Alpha
+
+            $cr->set_source_rgba($r, $g, $b, $a);
+            $cr->rectangle($x, $y, 1, 1);
+            $cr->fill;
+        }
+    }
+    return $surface;
+}
+
+sub save_selection {
+    my $x = int($start_x < $end_x ? $start_x : $end_x);
+    my $y = int($start_y < $end_y ? $start_y : $end_y);
+    my $w = abs($end_x - $start_x);
+    my $h = abs($end_y - $start_y);
+
+    return if ($w <= 0 || $h <= 0);
+
+    my $subpixbuf = $pixbuf->new_subpixbuf($x, $y, $w, $h);
+
+    my $dialog = Gtk3::FileChooserDialog->new(
+        'Speichern unter', $window,
+        'save',
+        'gtk-cancel' => 'cancel',
+        'gtk-save'   => 'accept',
+    );
+
+    if ($dialog->run eq 'accept') {
+        my $filename = $dialog->get_filename;
+        $subpixbuf->save($filename, 'png');
+    }
+    $dialog->destroy;
+}
