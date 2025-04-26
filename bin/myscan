@@ -172,22 +172,22 @@ $scan_btn->signal_connect(clicked => sub {
     #scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 --all-option
 
     my ($fh, $filename) = tempfile(SUFFIX => '.pnm', UNLINK => 0);
-    my $cmd = "scanimage --format=pnm --resolution $res --mode $mode --source \"$source\" > $filename";
-    system($cmd) == 0 or die "Scan fehlgeschlagen: $!";
+#    my $cmd = "scanimage --format=pnm --resolution $res --mode $mode --source \"$source\" > $filename";
+#    system($cmd) == 0 or die "Scan fehlgeschlagen: $!";
 
-#     open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
-#      # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
-#     my $pid = open(my $scan, '-|', 'scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20',
-#         '--format=pnm',
-#         '--resolution', $res,
-#         '--mode', $mode,
-#         '--source', $source,
-#     ) or die "Scan fehlgeschlagen: $!";
-#     while (read($scan, my $buffer, 4096)) {
-#         print $out $buffer;
-#     }
-#     close $scan;
-#     close $out;
+    open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
+     # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
+    my $pid = open(my $scan, '-|', 'scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20'.
+        ' --format=pnm'.
+        ' --resolution '. $res.
+        ' --mode '. $mode.
+        ' --source '. $source
+    ) or die "Scan fehlgeschlagen: $!";
+    while (read($scan, my $buffer, 4096)) {
+        print $out $buffer;
+    }
+    close $scan;
+    close $out;
 
     # Bild laden
 $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file($filename);
