@@ -1,0 +1,181 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Gtk3 -init;
+use Glib qw(TRUE FALSE);
+use Image::Magick;
+#use Gtk3::Gdk::Pixbuf;
+use File::Temp qw(tempfile);
+
+# GUI
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title('Epson DS-6500 Scan Tool');
+$window->set_default_size(900, 600);
+$window->signal_connect(delete_event => sub { Gtk3->main_quit });
+
+my $hbox = Gtk3::Box->new('horizontal', 10);
+$window->add($hbox);
+
+my $drawing_area = Gtk3::DrawingArea->new;
+$drawing_area->set_size_request(500, 600);
+$hbox->pack_start($drawing_area, TRUE, TRUE, 0);
+
+# Bilddaten
+my $pixbuf;
+my $image_full;
+my ($start_x, $start_y, $end_x, $end_y);
+my $rect_defined = FALSE;
+
+# Events für Mausauswahl
+$drawing_area->add_events(['button-press-mask', 'button-release-mask', 'pointer-motion-mask']);
+$drawing_area->signal_connect(button_press_event => sub {
+    my ($area, $event) = @_;
+    $start_x = $event->x;
+    $start_y = $event->y;
+    $rect_defined = FALSE;
+    return TRUE;
+});
+$drawing_area->signal_connect(motion_notify_event => sub {
+    my ($area, $event) = @_;
+    $end_x = $event->x;
+    $end_y = $event->y;
+    $drawing_area->queue_draw;
+    return TRUE;
+});
+$drawing_area->signal_connect(button_release_event => sub {
+    my ($area, $event) = @_;
+    $end_x = $event->x;
+    $end_y = $event->y;
+    $rect_defined = TRUE;
+    $drawing_area->queue_draw;
+    return TRUE;
+});
+$drawing_area->signal_connect(draw => sub {
+    my ($area, $cr) = @_;
+    return unless $pixbuf;
+    Gtk3::Gdk::Cairo::set_source_pixbuf($cr, $pixbuf, 0, 0);
+    $cr->paint;
+    if ($rect_defined) {
+        $cr->set_source_rgb(1, 0, 0);
+        $cr->set_line_width(2);
+        my $x = $start_x < $end_x ? $start_x : $end_x;
+        my $y = $start_y < $end_y ? $start_y : $end_y;
+        my $w = abs($end_x - $start_x);
+        my $h = abs($end_y - $start_y);
+        $cr->rectangle($x, $y, $w, $h);
+        $cr->stroke;
+    }
+    return FALSE;
+});
+
+# Rechte Seite GUI
+my $settings = Gtk3::Box->new('vertical', 10);
+$hbox->pack_start($settings, FALSE, FALSE, 10);
+
+my $color_combo = Gtk3::ComboBoxText->new;
+$color_combo->append_text($_) for qw(lineart Gray Color);
+$color_combo->set_active(2);
+$settings->pack_start(Gtk3::Label->new('Farbmodus:'), FALSE, FALSE, 0);
+$settings->pack_start($color_combo, FALSE, FALSE, 0);
+
+my $res_combo = Gtk3::ComboBoxText->new;
+$res_combo->append_text($_) for qw(100 200 300 spezial);
+$res_combo->set_active(1);
+$settings->pack_start(Gtk3::Label->new('Auflösung:'), FALSE, FALSE, 0);
+$settings->pack_start($res_combo, FALSE, FALSE, 0);
+
+my $scan_radio = Gtk3::RadioButton->new_with_label(undef, 'Scannen');
+my $copy_radio = Gtk3::RadioButton->new_with_label($scan_radio, 'Kopieren');
+$settings->pack_start($scan_radio, FALSE, FALSE, 0);
+$settings->pack_start($copy_radio, FALSE, FALSE, 0);
+
+my $source_combo = Gtk3::ComboBoxText->new;
+$source_combo->append_text($_) for qw(Flatbed ADF 'ADF Duplex');
+$source_combo->set_active(0);
+$settings->pack_start(Gtk3::Label->new('Quelle:'), FALSE, FALSE, 0);
+$settings->pack_start($source_combo, FALSE, FALSE, 0);
+
+my $scan_btn = Gtk3::Button->new_with_label('Scan starten');
+$settings->pack_start($scan_btn, FALSE, FALSE, 10);
+
+my $save_btn = Gtk3::Button->new_with_label('Ausschnitt speichern');
+$settings->pack_start($save_btn, FALSE, FALSE, 10);
+
+# Scan-Button
+$scan_btn->signal_connect(clicked => sub {
+    my $mode = $color_combo->get_active_text;
+    my $res = $res_combo->get_active_text eq 'spezial' ? 150 : $res_combo->get_active_text;
+    my $source = $source_combo->get_active_text;
+
+    # Kommando bauen
+
+    #scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 --all-option
+
+    my ($fh, $filename) = tempfile(SUFFIX => '.pnm', UNLINK => 0);
+    #my $cmd = "scanimage --format=pnm --resolution $res --mode $mode --source \"$source\" > $filename";
+    #system($cmd) == 0 or die "Scan fehlgeschlagen: $!";
+
+    open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
+     # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
+    my $pid = open(my $scan, '-|', 'scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20',
+        '--format=pnm',
+        '--resolution', $res,
+        '--mode', $mode,
+        '--source', $source,
+    ) or die "Scan fehlgeschlagen: $!";
+    while (read($scan, my $buffer, 4096)) {
+        print $out $buffer;
+    }
+    close $scan;
+    close $out;
+
+
+    $image_full = Image::Magick->new;
+    $image_full->Read($filename);
+
+    $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_size($filename, 500, 600);
+    $drawing_area->queue_draw;
+});
+
+# Speicher-Button
+$save_btn->signal_connect(clicked => sub {
+    return unless $rect_defined && $image_full;
+
+    my $dialog = Gtk3::FileChooserDialog->new(
+        'Ausschnitt speichern',
+        $window,
+        'save',
+        'gtk-cancel' => 'cancel',
+        'gtk-save'   => 'accept',
+    );
+    $dialog->set_do_overwrite_confirmation(TRUE);
+    my $filter = Gtk3::FileFilter->new;
+    $filter->set_name('PNG-Bilder');
+    $filter->add_pattern('*.png');
+    $dialog->add_filter($filter);
+
+    if ($dialog->run eq 'accept') {
+        my $filename = $dialog->get_filename;
+
+        my $x = $start_x < $end_x ? $start_x : $end_x;
+        my $y = $start_y < $end_y ? $start_y : $end_y;
+        my $w = abs($end_x - $start_x);
+        my $h = abs($end_y - $start_y);
+
+        my ($iw, $ih) = $image_full->Get('width', 'height');
+        my $scale_x = $iw / 500;
+        my $scale_y = $ih / 600;
+
+        $image_full->Crop(
+            width  => int($w * $scale_x),
+            height => int($h * $scale_y),
+            x      => int($x * $scale_x),
+            y      => int($y * $scale_y),
+        );
+        $image_full->Write(filename => $filename);
+    }
+    $dialog->destroy;
+});
+
+$window->show_all;
+Gtk3->main;
