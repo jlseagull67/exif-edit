@@ -262,7 +262,7 @@ $scan_btn->signal_connect(clicked => sub {
 #################################
 # Save Button
 my $saveButtondummybox = Gtk3::EventBox->new; # space holder box for the numCopies spinbox
-my $save_btn = Gtk3::Button->new_with_label('Save Selection');
+my $save_btn = Gtk3::Button->new_with_label('Save');
 $settingsbox->pack_start($save_btn, FALSE, FALSE, 10);
 
 $save_btn->signal_connect(clicked => sub {
@@ -346,9 +346,12 @@ sub save_selection {
     my $w = abs($end_x - $start_x);
     my $h = abs($end_y - $start_y);
 
-    return if ($w <= 0 || $h <= 0);
 
     my $subpixbuf = $pixbuf->new_subpixbuf($x, $y, $w, $h);
+    # if nothing is selected...
+    if ($w <= 0 || $h <= 0){
+        $subpixbuf = $pixbuf
+    }
 
     my $dialog = Gtk3::FileChooserDialog->new(
         'Speichern unter', $window,
