@@ -26,7 +26,7 @@ my $monitor_height = Gtk3::Gdk::Display::get_default()
 print "$monitor_width / $monitor_height\n";
 
 #################################################################################
-# Main-HBox erstellen
+# create Main HBox
 #################################################################################
 my $mainbox = Gtk3::Box->new('horizontal', 5);
 $mainbox->set_homogeneous(0);  # boxes may be different in size
@@ -39,10 +39,10 @@ $window->add($mainbox);
 my $drawbox = Gtk3::Box->new('vertical', 5);
 $mainbox->add($drawbox);
 
-# Variables
+# declare variables
 my ($pixbuf, $surface, $start_x, $start_y, $end_x, $end_y, $selecting);
 
-# Bild laden
+# Load Picture
 $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file('deinbild.png');
 $surface = create_surface_from_pixbuf($pixbuf);
 
@@ -50,29 +50,29 @@ my $drawing_area = Gtk3::DrawingArea->new;
 $drawing_area->set_size_request(1000, 1300);
 $drawbox->add($drawing_area);
 
-# Zeichen-Callback
+# drawing callback
 $drawing_area->signal_connect(draw => sub {
     my ($widget, $cr) = @_;
 
-    # Bild zeichnen
+    # paint the picture
     $cr->set_source_surface($surface, 0, 0);
     $cr->paint;
 
-    ## dummy-Rechteck zeichnen
+    ## draw dummy rectangle
     #$start_x = 100;
     #$start_y = 100;
     #$end_x = 200;
     #$end_y = 200;
 
 
-    # Rechteck zeichnen, falls vorhanden
+    # draw rectangle if selected
     if (defined $start_x && defined $start_y && defined $end_x && defined $end_y) {
         my $x = $start_x;
         my $y = $start_y;
         my $w = $end_x - $start_x;
         my $h = $end_y - $start_y;
 
-        # Korrigieren bei negativen Werten
+        # adjust negative values
         if ($w < 0) {
             $x += $w;
             $w = -$w;
@@ -155,24 +155,24 @@ $mainbox->add($settingsbox);
 my $color_combo = Gtk3::ComboBoxText->new;
 $color_combo->append_text($_) for qw(lineart Gray Color);
 $color_combo->set_active(2);
-$settingsbox->pack_start(Gtk3::Label->new('Farbmodus:'), FALSE, FALSE, 0);
+$settingsbox->pack_start(Gtk3::Label->new('Colormode:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($color_combo, FALSE, FALSE, 0);
 
 my $res_combo = Gtk3::ComboBoxText->new;
 $res_combo->append_text($_) for qw(100 200 300 spezial);
 $res_combo->set_active(1);
-$settingsbox->pack_start(Gtk3::Label->new('Auflösung:'), FALSE, FALSE, 0);
+$settingsbox->pack_start(Gtk3::Label->new('Resolution:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($res_combo, FALSE, FALSE, 0);
 
-my $scan_radio = Gtk3::RadioButton->new_with_label(undef, 'Scannen');
-my $copy_radio = Gtk3::RadioButton->new_with_label($scan_radio, 'Kopieren');
+my $scan_radio = Gtk3::RadioButton->new_with_label(undef, 'Scan Preview');
+my $copy_radio = Gtk3::RadioButton->new_with_label($scan_radio, 'Scan Print');
 $settingsbox->pack_start($scan_radio, FALSE, FALSE, 0);
 $settingsbox->pack_start($copy_radio, FALSE, FALSE, 0);
 
 my $source_combo = Gtk3::ComboBoxText->new;
 $source_combo->append_text($_) for qw(Flatbed ADF 'ADF Duplex');
 $source_combo->set_active(0);
-$settingsbox->pack_start(Gtk3::Label->new('Quelle:'), FALSE, FALSE, 0);
+$settingsbox->pack_start(Gtk3::Label->new('Source:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($source_combo, FALSE, FALSE, 0);
 
 # Scan Button
@@ -191,21 +191,21 @@ $scan_btn->signal_connect(clicked => sub {
 
     my ($fh, $filename) = tempfile(SUFFIX => '.pnm', UNLINK => 0);
 
-    open(my $out, '>', $filename) or die "Kann Datei nicht öffnen: $!";
+    open(my $out, '>', $filename) or die "unable to open $filename ($!)";
      # funktioniert in der Shell:  scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20 > testimg
     my $pid = open(my $scan, '-|', 'scanimage -d epsonscan2:networkscanner:esci2:network:192.168.167.20'.
         ' --format=pnm'.
         ' --resolution '. $res.
         ' --mode '. $mode.
         ' --source '. $source
-    ) or die "Scan fehlgeschlagen: $!";
+    ) or die "Scan failed ($!)";
     while (read($scan, my $buffer, 4096)) {
         print $out $buffer;
     }
     close $scan;
     close $out;
 
-    # Bild laden
+    # Load picture to drawing area
     $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file($filename);
     $surface = create_surface_from_pixbuf($pixbuf);
 
@@ -217,7 +217,7 @@ $scan_btn->signal_connect(clicked => sub {
 });
 
 
-my $save_btn = Gtk3::Button->new_with_label('Ausschnitt speichern');
+my $save_btn = Gtk3::Button->new_with_label('Safe Selection');
 $settingsbox->pack_start($save_btn, FALSE, FALSE, 10);
 
 $save_btn->signal_connect(clicked => sub {
@@ -232,7 +232,7 @@ $window->show_all;
 Gtk3->main;
 
 # ========================
-# Hilfsfunktionen
+# helper functions
 # ========================
 
 sub create_surface_from_pixbuf {
@@ -266,7 +266,7 @@ sub create_surface_from_pixbuf {
 
 sub save_selection {
 
-    print "gotcha in save_selection\n";
+    #print "gotcha in save_selection\n";
 
     my $x = int($start_x < $end_x ? $start_x : $end_x);
     my $y = int($start_y < $end_y ? $start_y : $end_y);
