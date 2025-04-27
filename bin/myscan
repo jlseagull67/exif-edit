@@ -14,6 +14,7 @@ use Cairo;
 my $window = Gtk3::Window->new('toplevel');
 $window->set_title('Epson DS-6500 Scan Tool');
 $window->set_default_size(900, 600);
+$window->set_border_width(10);
 $window->signal_connect(delete_event => sub { Gtk3->main_quit });
 
 #$window->maximize();  # full screen window
@@ -23,7 +24,7 @@ my $monitor_width = Gtk3::Gdk::Display::get_default()
 my $monitor_height = Gtk3::Gdk::Display::get_default()
                   ->get_primary_monitor()
                   ->get_geometry()->{height};
-print "$monitor_width / $monitor_height\n";
+#print "$monitor_width / $monitor_height\n";
 
 #################################################################################
 # create Main HBox
@@ -32,15 +33,19 @@ my $mainbox = Gtk3::Box->new('horizontal', 5);
 $mainbox->set_homogeneous(0);  # boxes may be different in size
 $window->add($mainbox);
 
+#################################################################################
+# declare variables and default settings
+#################################################################################
+my ($pixbuf, $surface, $start_x, $start_y, $end_x, $end_y, $selecting, $numCopies, $numCopiesadjust);
+
+$numCopies = 1;
+
 
 #################################################################################
 # drawing area definition
 #################################################################################
 my $drawbox = Gtk3::Box->new('vertical', 5);
 $mainbox->add($drawbox);
-
-# declare variables
-my ($pixbuf, $surface, $start_x, $start_y, $end_x, $end_y, $selecting);
 
 # Load Picture
 $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file('deinbild.png');
@@ -152,31 +157,69 @@ $mainbox->add($settingsbox);
 
 #$mainbox->pack_start($settingsbox, FALSE, FALSE, 10);
 
+#################################
+# Colormode selection
 my $color_combo = Gtk3::ComboBoxText->new;
-$color_combo->append_text($_) for qw(lineart Gray Color);
-$color_combo->set_active(2);
+$color_combo->append_text($_) for qw(Lineart Gray Color);
+$color_combo->set_active(2); # default Color
+
 $settingsbox->pack_start(Gtk3::Label->new('Colormode:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($color_combo, FALSE, FALSE, 0);
 
+#################################
+# Resolution selection
 my $res_combo = Gtk3::ComboBoxText->new;
 $res_combo->append_text($_) for qw(100 200 300 spezial);
-$res_combo->set_active(1);
+$res_combo->set_active(1);   # default 200
+
 $settingsbox->pack_start(Gtk3::Label->new('Resolution:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($res_combo, FALSE, FALSE, 0);
 
-my $scan_radio = Gtk3::RadioButton->new_with_label(undef, 'Scan Preview');
-my $copy_radio = Gtk3::RadioButton->new_with_label($scan_radio, 'Scan Print');
+#################################
+# Scan/Print selection
+my $scan_radio = Gtk3::RadioButton->new_with_label(undef, 'Scan');
+my $copy_radio = Gtk3::RadioButton->new_with_label($scan_radio, 'Copy');
+
 $settingsbox->pack_start($scan_radio, FALSE, FALSE, 0);
 $settingsbox->pack_start($copy_radio, FALSE, FALSE, 0);
+$scan_radio->signal_connect (toggled => \&scan_copy_toggled, "scan");
+$copy_radio->signal_connect (toggled => \&scan_copy_toggled, "copy");
 
+#################################
+# Number of copies spinbutton
+my $numCopiesdummybox = Gtk3::EventBox->new; # space holder box for the numCopies spinbox
+my $numCopiesLabel = Gtk3::Label->new('Number of Copies:');
+$numCopiesLabel->set_no_show_all(TRUE);
+$numCopiesLabel->hide;
+$numCopiesdummybox->add($numCopiesLabel);
+
+my $numCopiesdummybox2 = Gtk3::EventBox->new; # space holder box for the numCopies spinbox
+
+$numCopiesadjust = Gtk3::Adjustment->new($numCopies, 1, 99, 1, 10, 0);
+my $numCopiesSpinbutton = Gtk3::SpinButton->new($numCopiesadjust, $numCopies, 1);
+$numCopiesSpinbutton->set_text($numCopiesadjust);
+$numCopiesSpinbutton->set_digits(0);
+$numCopies = $numCopiesSpinbutton->get_value;
+$numCopiesSpinbutton->set_no_show_all(TRUE); # inhibits show_all for the numCopiesSpinbutton
+$numCopiesSpinbutton->hide;
+$numCopiesdummybox2->add($numCopiesSpinbutton);
+
+$settingsbox->pack_start($numCopiesdummybox, FALSE, FALSE, 0);
+$settingsbox->pack_start($numCopiesdummybox2, FALSE, FALSE, 0);
+
+
+#################################
+# Source selection
 my $source_combo = Gtk3::ComboBoxText->new;
-$source_combo->append_text($_) for qw(Flatbed ADF 'ADF Duplex');
+$source_combo->append_text($_) for qw(Flatbed ADF Duplex);
 $source_combo->set_active(0);
+
 $settingsbox->pack_start(Gtk3::Label->new('Source:'), FALSE, FALSE, 0);
 $settingsbox->pack_start($source_combo, FALSE, FALSE, 0);
 
+#################################
 # Scan Button
-my $scan_btn = Gtk3::Button->new_with_label('Scan starten');
+my $scan_btn = Gtk3::Button->new_with_label('Start');
 $settingsbox->pack_start($scan_btn, FALSE, FALSE, 10);
 
 $scan_btn->signal_connect(clicked => sub {
@@ -216,8 +259,10 @@ $scan_btn->signal_connect(clicked => sub {
     $drawing_area->queue_draw;
 });
 
-
-my $save_btn = Gtk3::Button->new_with_label('Safe Selection');
+#################################
+# Save Button
+my $saveButtondummybox = Gtk3::EventBox->new; # space holder box for the numCopies spinbox
+my $save_btn = Gtk3::Button->new_with_label('Save Selection');
 $settingsbox->pack_start($save_btn, FALSE, FALSE, 10);
 
 $save_btn->signal_connect(clicked => sub {
@@ -262,6 +307,34 @@ sub create_surface_from_pixbuf {
     }
     return $surface;
 }
+
+sub scan_copy_toggled {
+    #print "gotcha in scan_copy_toggled\n";
+    my ($widget, $data) = @_;
+    print "Radio button $data is now $data\n";
+
+    if ($data eq 'copy'){
+        if ($widget->get_active == TRUE){
+            $numCopiesLabel->set_no_show_all(FALSE);
+            $numCopiesLabel->show;
+            $numCopiesSpinbutton->set_no_show_all(FALSE);
+            $numCopiesSpinbutton->show;
+            $save_btn->set_no_show_all(TRUE);
+            $save_btn->hide;
+        }
+        else {
+            $numCopiesLabel->set_no_show_all(TRUE); # inhibits show_all for the numCopiesSpinbutton
+            $numCopiesLabel->hide;
+            $numCopiesSpinbutton->set_no_show_all(TRUE);
+            $numCopiesSpinbutton->hide;
+            $save_btn->set_no_show_all(FALSE);
+            $save_btn->show;
+
+        }
+    }
+    return FALSE;
+}
+
 
 
 sub save_selection {
