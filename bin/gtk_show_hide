@@ -1,0 +1,48 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Gtk3 '-init';
+use Glib qw/TRUE FALSE/;
+
+# Hauptfenster erstellen
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title('Label Sichtbarkeit umschalten');
+$window->set_default_size(300, 100);
+$window->signal_connect( destroy => sub { Gtk3->main_quit } );
+
+# Vertikale Box erstellen
+my $vbox = Gtk3::Box->new('vertical', 5);
+
+# Label erstellen
+my $label = Gtk3::Label->new('Hallo, ich bin ein Label!');
+
+# Container für das Label, um den Platz zu behalten
+my $eventbox = Gtk3::EventBox->new;
+$eventbox->add($label);
+
+# Button erstellen
+my $button = Gtk3::Button->new('Toggle Label Sichtbarkeit');
+
+# Signal für Buttonklick
+$button->signal_connect(clicked => sub {
+    if ($label->get_visible) {
+        $label->set_no_show_all(TRUE); # verhindert, dass show_all das Label wieder sichtbar macht
+        $label->hide;
+    } else {
+        $label->set_no_show_all(FALSE);
+        $label->show;
+    }
+});
+
+# Widgets in die Box packen
+$vbox->pack_start($eventbox, 1, 1, 0);
+$vbox->pack_start($button, 0, 0, 0);
+
+# Box ins Fenster packen
+$window->add($vbox);
+
+# Alles anzeigen
+$window->show_all;
+
+# Main-Loop starten
+Gtk3->main;

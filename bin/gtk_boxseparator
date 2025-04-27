@@ -1,0 +1,41 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Gtk3 '-init';
+
+# Hauptfenster erstellen
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title('Zwei Boxen mit Separator');
+$window->set_default_size(800, 1300);
+$window->signal_connect( destroy => sub { Gtk3->main_quit } );
+
+# Haupt-HBox erstellen
+my $mainbox = Gtk3::Box->new('horizontal', 5);
+$mainbox->set_homogeneous(0);  # Boxen nicht automatisch gleich groß
+
+# Erste Box
+my $box1 = Gtk3::Box->new('vertical', 5);
+my $label1 = Gtk3::Label->new('Box 1 mit seeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhr langem label');
+$box1->pack_start($label1, 1, 1, 0);
+
+# Separator
+my $separator = Gtk3::Separator->new('vertical');
+
+# Zweite Box
+my $box2 = Gtk3::Box->new('vertical', 5);
+my $label2 = Gtk3::Label->new('Box 2');
+$box2->pack_start($label2, 1, 1, 0);
+
+# Boxen und Separator in die Haupt-HBox einfügen
+$mainbox->pack_start($box1, 1, 1, 0);
+$mainbox->pack_start($separator, 0, 1, 0);
+$mainbox->pack_start($box2, 1, 1, 0);
+
+# Haupt-HBox ins Fenster packen
+$window->add($mainbox);
+
+# Alles anzeigen
+$window->show_all;
+
+# Main-Loop starten
+Gtk3->main;
