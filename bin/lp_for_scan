@@ -1,0 +1,29 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+# Konfiguration
+# lpstat -p gibt den Druckernamen aus
+# lpstat -e gibt alle registrierten Drucker zurück (ohne Kommentar!)
+my $druckername = ''; # Ersetze mit deinem Netzwerkdrucker-Namen
+
+$druckername = `lpstat -e`;
+print "$druckername\n";
+
+
+my $datei = 'out.png';      # Pfad zum Bild oder PDF
+
+# Prüfen ob Datei existiert
+unless (-e $datei) {
+    die "Datei nicht gefunden: $datei\n";
+}
+
+# Befehl zum Drucken bauen
+my $befehl = "lp -d $druckername \"$datei\"";
+
+# Drucken
+print "Sende Datei an Drucker...\n";
+system($befehl) == 0
+    or die "Fehler beim Drucken: $?";
+
+print "Druckauftrag erfolgreich gesendet.\n";
