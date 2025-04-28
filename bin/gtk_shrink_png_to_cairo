@@ -1,0 +1,88 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Gtk3 '-init';
+use Glib qw/TRUE FALSE/;
+use Cairo;
+
+# Target size
+my $TARGET_WIDTH  = 200;
+my $TARGET_HEIGHT = 150;
+
+# Load the PNG
+my $filename = '/tmp/YE0EGiOAYG.png';  # <-- adjust your image path
+my $pixbuf_original = Gtk3::Gdk::Pixbuf->new_from_file($filename);
+
+# Scale the Pixbuf
+my $pixbuf_scaled = $pixbuf_original->scale_simple(
+    $TARGET_WIDTH,
+    $TARGET_HEIGHT,
+    'bilinear'   # nice quality scaling
+);
+
+# Create Main Window
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title('Pixbuf Shrink Example (Fixed)');
+$window->set_default_size(400, 300);
+$window->signal_connect(destroy => sub { Gtk3->main_quit });
+
+# Create DrawingArea
+my $drawing_area = Gtk3::DrawingArea->new;
+$drawing_area->set_size_request(400, 300);
+
+# Draw handler
+$drawing_area->signal_connect('draw' => sub {
+    my ($widget, $cr) = @_;
+
+    # Create GdkWindow for the widget
+    my $window = $widget->get_window;
+
+    # Create GdkCairo context
+    Gtk3::Gdk::Cairo::set_source_pixbuf($cr, $pixbuf_scaled, 50, 50);
+    $cr->paint;
+
+    return FALSE;
+});
+
+# Workaround for missing Gtk3::Gdk::Cairo::set_source_pixbuf
+package Gtk3::Gdk::Cairo;
+use Gtk3;
+use Cairo;
+
+sub set_source_pixbuf {
+    my ($cr, $pixbuf, $pixbuf_x, $pixbuf_y) = @_;
+
+    my $surface = Cairo::ImageSurface->create('rgb24', $pixbuf->get_width, $pixbuf->get_height);
+    my $surface_cr = Cairo::Context->create($surface);
+
+    my $pixels = $pixbuf->get_pixels;
+    my $rowstride = $pixbuf->get_rowstride;
+    my $width = $pixbuf->get_width;
+    my $height = $pixbuf->get_height;
+    my $n_channels = $pixbuf->get_n_channels;
+
+    for my $y (0 .. $height - 1) {
+        for my $x (0 .. $width - 1) {
+            my $offset = $y * $rowstride + $x * $n_channels;
+            my $r = ord(substr($pixels, $offset, 1)) / 255;
+            my $g = ord(substr($pixels, $offset+1, 1)) / 255;
+            my $b = ord(substr($pixels, $offset+2, 1)) / 255;
+            $surface_cr->set_source_rgb($r, $g, $b);
+            $surface_cr->rectangle($x, $y, 1, 1);
+            $surface_cr->fill;
+        }
+    }
+
+    $cr->set_source_surface($surface, $pixbuf_x, $pixbuf_y);
+}
+
+package main;
+
+# Add the DrawingArea to the window
+$window->add($drawing_area);
+
+# Show all widgets
+$window->show_all;
+
+# Start the GTK main loop
+Gtk3->main;
