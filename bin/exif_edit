@@ -196,7 +196,7 @@ sub load_images {
     my $actfolder = `pwd`;
     $actfolder =~ s/\n//;
     my $num_picts = @images;
-    $window->set_title("EXIF Editor - $actfolder ($num_picts)");
+    $window->set_title("exif_edit - $actfolder ($num_picts)");
     my $row;
     my $col;
     my $i = 0;
