@@ -35,10 +35,10 @@ my @imageeventboxes = ();
 
 
 #################################################################################
-# Fenster-Definition
+# Window definition
 #################################################################################
 my $window = Gtk3::Window->new('toplevel');
-$window->set_title("EXIF Editor");
+# $window->set_title() see &load_images
 $window->set_default_size(1600, 600);
 $window->signal_connect(destroy => sub { Gtk3->main_quit });
 
@@ -53,7 +53,7 @@ $window->add($vbox_main);
 $window->maximize();
 
 #################################################################################
-# Menü-Definition
+# Menue definition
 #################################################################################
 # Accelerator-Gruppe für Shortcuts
 my $accel_group = Gtk3::AccelGroup->new();
@@ -193,6 +193,10 @@ sub load_images {
 
     my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     @images = sort @images;
+    my $actfolder = `pwd`;
+    $actfolder =~ s/\n//;
+    my $num_picts = @images;
+    $window->set_title("EXIF Editor - $actfolder ($num_picts)");
     my $row;
     my $col;
     my $i = 0;
