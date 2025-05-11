@@ -55,7 +55,7 @@ $window->maximize();
 #################################################################################
 # Menue definition
 #################################################################################
-# Accelerator-Gruppe für Shortcuts
+# Accelerator group for shortcuts
 my $accel_group = Gtk3::AccelGroup->new();
 $window->add_accel_group($accel_group);
 my $menubar = Gtk3::MenuBar->new();
@@ -71,19 +71,19 @@ $menu_item_datei->set_submenu($menu_datei);
 ##################################
 # Define Menue File
 ##################################
-# Neu laden
+# reload
 my $menu_item_reload = Gtk3::MenuItem->new_with_label("Neu laden");
 $menu_item_reload->signal_connect(activate => \&load_images);
 $menu_item_reload->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_r, ['control-mask'], 'visible');
 $menu_datei->append($menu_item_reload);
 
-# # ToDel
+# # todel
 my $menu_item_todel = Gtk3::MenuItem->new_with_label("To Del");
 $menu_item_todel->signal_connect(activate => \&todel_images);
 $menu_item_todel->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_d, ['control-mask'], 'visible');
 $menu_datei->append($menu_item_todel);
 
-# Beenden
+# quit
 my $menu_item_quit = Gtk3::MenuItem->new_with_label("Beenden");
 $menu_item_quit->signal_connect(activate => sub { Gtk3->main_quit() });
 $menu_item_quit->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_q, ['control-mask'], 'visible');
@@ -126,19 +126,19 @@ $menubar->append($menu_item_help);
 $vbox_main->pack_start($menubar, FALSE, FALSE, 0);
 
 #################################################################################
-# Scrollbereich im Fenster
+# Scrolled Window
 #################################################################################
 my $scroll = Gtk3::ScrolledWindow->new();
 $scroll->set_policy('automatic', 'automatic');
 $vbox_main->pack_start($scroll, TRUE, TRUE, 0);
 
-# Bildcontainer
+# Picture container
 my $vbox_images = Gtk3::Box->new('vertical', 10);
 $scroll->add($vbox_images);
 
 #################################################################################
-# Todel-Funktion
-# Verschiebt alle Bilder mit Exif-Comment = todel in ein Unterverzeichnis
+# Todel function
+# moves all pictures with comment = todel in a subdirectory
 #################################################################################
 sub todel_images {
     my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
@@ -163,7 +163,7 @@ sub todel_images {
 }
 
 #################################################################################
-# Lösche alle Widgets
+# remove all windgets
 #################################################################################
 sub remove_widget {
     my ($widget) = @_;
@@ -172,7 +172,7 @@ sub remove_widget {
 $vbox_images->foreach(\&remove_widget);  # Clear
 
 #################################################################################
-# Setzt den Fokus auf einen Container
+# Set the focus to a container
 #################################################################################
 sub set_focus_on {
     my ($focused) = @_;
@@ -288,7 +288,7 @@ $window->show_all();
 Gtk3->main();
 
 #################################################################################
-## Hilfefenster - Anleitung
+## Helpwindow - Manual
 #################################################################################
 sub open_manual_window {
     my $top = Gtk3::Window->new('toplevel');
