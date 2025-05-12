@@ -1,4 +1,108 @@
 #!/usr/bin/env perl
+
+#
+#🖼️ 2. Zielgröße und Bild laden
+#
+#my $TARGET_WIDTH  = 1000;
+#my $TARGET_HEIGHT = 1300;
+#
+#my $filename = 'deinbild.png';
+#my $pixbuf_original = Gtk3::Gdk::Pixbuf->new_from_file($filename);
+#
+#    Setzt die Zielgröße für die Darstellung.
+#
+#    Lädt ein Bild (deinbild.png) als pixbuf (GTK-Objekt für Bilder).
+#
+#🔍 3. Bild skalieren
+#
+#my $pixbuf_scaled = $pixbuf_original->scale_simple(
+#    $TARGET_WIDTH,
+#    $TARGET_HEIGHT,
+#    'bilinear'
+#);
+#
+#    Skaliert das Bild auf die gewünschte Größe mit bilinearer Interpolation (gute Qualität).
+#
+#🪟 4. Fenster und Zeichenbereich erstellen
+#
+#my $window = Gtk3::Window->new('toplevel');
+#$window->set_title('Pixbuf Shrink Example (Fixed)');
+#$window->set_default_size($TARGET_WIDTH, $TARGET_HEIGHT);
+#$window->signal_connect(destroy => sub { Gtk3->main_quit });
+#
+#    Erstellt ein GTK-Fenster mit Titel und Größe.
+#
+#    Wenn das Fenster geschlossen wird, beendet sich die Anwendung.
+#
+#🖌️ 5. Zeichenfläche vorbereiten
+#
+#my $drawing_area = Gtk3::DrawingArea->new;
+#$drawing_area->set_size_request($TARGET_WIDTH, $TARGET_HEIGHT);
+#
+#    Erstellt ein Widget zum Zeichnen (DrawingArea) in der Zielgröße.
+#
+#🖼️ 6. Zeichenfunktion verbinden
+#
+#$drawing_area->signal_connect('draw' => sub {
+#    my ($widget, $cr) = @_;
+#
+#    my $window = $widget->get_window;
+#
+#    Gtk3::Gdk::Cairo::set_source_pixbuf($cr, $pixbuf_scaled, 50, 50);
+#    $cr->paint;
+#
+#    return FALSE;
+#});
+#
+#    Wenn GTK zeichnen will, wird dieser Code ausgeführt.
+#
+#    set_source_pixbuf: Setzt das Bild in den Cairo-Kontext ab (Position x=50, y=50).
+#
+#    paint: Zeichnet das Bild auf die Zeichenfläche.
+#
+#🧩 7. Workaround für Cairo-Funktion
+#
+#GTK3 Perl hat kein eingebautes set_source_pixbuf, deshalb wird es manuell implementiert:
+#
+#package Gtk3::Gdk::Cairo;
+#...
+#sub set_source_pixbuf {
+#    ...
+#}
+#
+#Was passiert hier?
+#
+#    Es wird ein neues Cairo-ImageSurface erstellt.
+#
+#    Dann werden alle Pixel des Bildes einzeln gelesen (R, G, B).
+#
+#    Jeder Pixel wird auf die Oberfläche gemalt.
+#
+#    Schließlich wird das Surface an die Haupt-Cairo-Zeichenfläche übergeben.
+#
+#💡 Performance-Hinweis: Diese Methode ist langsam, aber ein funktionierender Ersatz.
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 use strict;
 use warnings;
 use Gtk3 '-init';
@@ -6,29 +110,42 @@ use Glib qw/TRUE FALSE/;
 use Cairo;
 
 # Target size
-my $TARGET_WIDTH  = 200;
-my $TARGET_HEIGHT = 150;
+my $TARGET_WIDTH  = 1000;
+my $TARGET_HEIGHT = 1300;
 
 # Load the PNG
-my $filename = '/tmp/YE0EGiOAYG.png';  # <-- adjust your image path
+my $filename = 'deinbild.png';  # <-- adjust your image path
 my $pixbuf_original = Gtk3::Gdk::Pixbuf->new_from_file($filename);
 
 # Scale the Pixbuf
+# Berechne skalierten Pixbuf mit Erhalt des Seitenverhältnisses
+my $original_width  = $pixbuf_original->get_width;
+my $original_height = $pixbuf_original->get_height;
+
+my $scale_x = $TARGET_WIDTH  / $original_width;
+my $scale_y = $TARGET_HEIGHT / $original_height;
+
+my $scale = ($scale_x < $scale_y) ? $scale_x : $scale_y;
+
+my $scaled_width  = int($original_width  * $scale);
+my $scaled_height = int($original_height * $scale);
+
 my $pixbuf_scaled = $pixbuf_original->scale_simple(
-    $TARGET_WIDTH,
-    $TARGET_HEIGHT,
-    'bilinear'   # nice quality scaling
+    $scaled_width,
+    $scaled_height,
+    'bilinear'
 );
+
 
 # Create Main Window
 my $window = Gtk3::Window->new('toplevel');
 $window->set_title('Pixbuf Shrink Example (Fixed)');
-$window->set_default_size(400, 300);
+$window->set_default_size($TARGET_WIDTH, $TARGET_HEIGHT);
 $window->signal_connect(destroy => sub { Gtk3->main_quit });
 
-# Create DrawingArea
+# Create DrawingArea ImageSize plus margin
 my $drawing_area = Gtk3::DrawingArea->new;
-$drawing_area->set_size_request(400, 300);
+$drawing_area->set_size_request($TARGET_WIDTH+20, $TARGET_HEIGHT+20);
 
 # Draw handler
 $drawing_area->signal_connect('draw' => sub {
@@ -38,7 +155,7 @@ $drawing_area->signal_connect('draw' => sub {
     my $window = $widget->get_window;
 
     # Create GdkCairo context
-    Gtk3::Gdk::Cairo::set_source_pixbuf($cr, $pixbuf_scaled, 50, 50);
+    Gtk3::Gdk::Cairo::set_source_pixbuf($cr, $pixbuf_scaled, 10, 10);
     $cr->paint;
 
     return FALSE;
@@ -61,12 +178,14 @@ sub set_source_pixbuf {
     my $height = $pixbuf->get_height;
     my $n_channels = $pixbuf->get_n_channels;
 
+    my $zweifuenfuenf = 255;
+
     for my $y (0 .. $height - 1) {
         for my $x (0 .. $width - 1) {
             my $offset = $y * $rowstride + $x * $n_channels;
-            my $r = ord(substr($pixels, $offset, 1)) / 255;
-            my $g = ord(substr($pixels, $offset+1, 1)) / 255;
-            my $b = ord(substr($pixels, $offset+2, 1)) / 255;
+            my $r = ord(substr($pixels, $offset, 1)) / $zweifuenfuenf;
+            my $g = ord(substr($pixels, $offset+1, 1)) / $zweifuenfuenf;
+            my $b = ord(substr($pixels, $offset+2, 1)) / $zweifuenfuenf;
             $surface_cr->set_source_rgb($r, $g, $b);
             $surface_cr->rectangle($x, $y, 1, 1);
             $surface_cr->fill;
