@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use utf8;
+use POSIX qw/floor/;
 binmode STDOUT, ':utf8';
 use Gtk3 -init;
 use Glib 'TRUE', 'FALSE';
@@ -10,7 +11,7 @@ use File::Basename;
 use Image::ExifTool;
 
 #################################################################################
-# CSS für Fokus-Anzeige
+# CSS for focus frame
 #################################################################################
 # CSS für Rahmen ein/aus
 my $css_provider = Gtk3::CssProvider->new;
@@ -30,8 +31,15 @@ my $screen = Gtk3::Gdk::Screen::get_default;
 $css_provider->load_from_data($css_styles);
 Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, Gtk3::STYLE_PROVIDER_PRIORITY_USER);
 
-# Sammler für alle Eventboxen (über den wird bei Fokusänderung iteriert)
+# Collector for all eventboxes (for iteration during focus change)
 my @imageeventboxes = ();
+
+#################################################################################
+# Global vars and default settings
+#################################################################################
+my $numofcolls = 6;
+my %exif_rank = (1 => 0);
+my $show_exif_details = 0;
 
 
 #################################################################################
@@ -46,7 +54,10 @@ my $monitor_width = Gtk3::Gdk::Display::get_default()
                   ->get_primary_monitor()
                   ->get_geometry()->{width};
 my $thumbsize = $monitor_width > 1920 ? 400 : $monitor_width == 1920 ? 300 : $monitor_width == 1440 ? 200 : 150;
-#$thumbsize = 150;
+$thumbsize = floor(($monitor_width / $numofcolls) - 5 * ($numofcolls + 2));
+
+print "monitor_width $monitor_width\n";
+print "thumbsize $thumbsize\n";
 
 my $vbox_main = Gtk3::Box->new('vertical', 0);
 $window->add($vbox_main);
@@ -63,8 +74,8 @@ my $menubar = Gtk3::MenuBar->new();
 ##################################
 # Create Menue File
 ##################################
-#   Datei
-my $menu_item_datei = Gtk3::MenuItem->new_with_label("Datei");
+#   File
+my $menu_item_datei = Gtk3::MenuItem->new_with_label("File");
 my $menu_datei = Gtk3::Menu->new();
 $menu_item_datei->set_submenu($menu_datei);
 
@@ -266,7 +277,7 @@ sub load_images {
         $vbox->pack_start($commententry, FALSE, FALSE, 0);
 
         # Neue Zeile alle 6 Bilder
-        if ($i % 6 == 0) {
+        if ($i % $numofcolls == 0) {
             $row = Gtk3::Box->new('horizontal', 10);
             $vbox_images->pack_start($row, FALSE, FALSE, 10);
         }
