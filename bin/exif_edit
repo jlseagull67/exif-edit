@@ -2,9 +2,10 @@
 
 use strict;
 use warnings;
-use utf8;
+use Encode qw(decode);
+#use utf8;
 use POSIX qw/floor/;
-binmode STDOUT, ':utf8';
+#binmode STDOUT, ':utf8';
 use Gtk3 -init;
 use Glib 'TRUE', 'FALSE';
 use File::Basename;
@@ -245,7 +246,8 @@ sub load_images {
         $exifTool->ExtractInfo($file);
         my $comment = $exifTool->GetValue('Comment', 'PrintConv') // '';
         my $commententry = Gtk3::Entry->new();
-        $commententry->set_text($comment);
+        my $comment_unicode = decode('UTF-8', $comment);
+        $commententry->set_text($comment_unicode);
         $commententry->signal_connect(focus_out_event => sub {
             my $new_comment = $commententry->get_text();
             my $tool = Image::ExifTool->new;
@@ -361,11 +363,6 @@ sub open_about_window {
 * Dieses Programm schreibt Kommentare zu Bildern als EXIF-Tag "Comment".
 
 Ich übernehme für das Programm keine Garantie. Es kann frei geändert oder weitergegeben werden unter den selben Bedingungen wie Perl selbst.
-
-Wenn dir das Programm gefällt freue ich mich über eine Spende.
-
- Jörg Albrecht
- IBAN DE93 5001 0517 5436 0360 49
 
 END_about
 
