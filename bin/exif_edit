@@ -62,6 +62,7 @@ my @imageeventboxes = ();
 #################################################################################
 my @WANTED_TAGS = qw(
     FileName
+    Comment
     FileSize
     Model
     LensType
@@ -70,7 +71,6 @@ my @WANTED_TAGS = qw(
     FocusDistance
     ImageSize
     ImageStabilization
-    Comment
     CreateDate
     Aperture
     ShutterSpeed
@@ -220,7 +220,11 @@ sub update_exif_panel {
     );
 
     my $et = Image::ExifTool->new;
-    $et->Options(DateFormat => '%Y-%m-%d %H:%M:%S', Duplicates => 0);
+    $et->Options(DateFormat => '%Y-%m-%d %H:%M:%S',
+                 Duplicates => 0,
+                 RequestAll => 1,    # <-- NEU: fordert auch "versteckte" Tags wie Comment an
+                 Group      => 0,    # <-- NEU: Schlüssel ohne Gruppen-Präfix (kein "File:Comment")
+                );
     my $info = $et->ImageInfo($filepath, \@WANTED_TAGS);
 
     my %seen;
@@ -324,7 +328,7 @@ sub load_images {
         $imageeventbox->signal_connect(button_press_event => sub {
             my ($widget, $event) = @_;
             if ($event->button == 1) {
-                system("firefox \"$captured_file\" &");
+                system("/bin/sh", "-c", "firefox \"$captured_file\" &");
             } elsif ($event->button == 3) {
                 system("gimp \"$captured_file\" &");
             }
