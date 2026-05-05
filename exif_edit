@@ -120,7 +120,7 @@ my $menu_item_datei = Gtk3::MenuItem->new_with_label("File");
 my $menu_datei      = Gtk3::Menu->new();
 $menu_item_datei->set_submenu($menu_datei);
 
-my $menu_item_reload = Gtk3::MenuItem->new_with_label("Neu laden");
+my $menu_item_reload = Gtk3::MenuItem->new_with_label("Reload");
 $menu_item_reload->signal_connect(activate => \&load_images);
 $menu_item_reload->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_r, ['control-mask'], 'visible');
 $menu_datei->append($menu_item_reload);
@@ -130,7 +130,7 @@ $menu_item_todel->signal_connect(activate => \&todel_images);
 $menu_item_todel->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_d, ['control-mask'], 'visible');
 $menu_datei->append($menu_item_todel);
 
-my $menu_item_quit = Gtk3::MenuItem->new_with_label("Beenden");
+my $menu_item_quit = Gtk3::MenuItem->new_with_label("End");
 $menu_item_quit->signal_connect(activate => sub { Gtk3->main_quit() });
 $menu_item_quit->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_q, ['control-mask'], 'visible');
 $menu_datei->append($menu_item_quit);
@@ -140,12 +140,12 @@ my $menu_help      = Gtk3::Menu->new();
 my $menu_item_help = Gtk3::MenuItem->new_with_label("?");
 $menu_item_help->set_submenu($menu_help);
 
-my $menu_item_manual = Gtk3::MenuItem->new_with_label("Anleitung");
+my $menu_item_manual = Gtk3::MenuItem->new_with_label("Manual");
 $menu_item_manual->signal_connect(activate => \&open_manual_window);
 $menu_item_manual->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_h, ['control-mask'], 'visible');
 $menu_help->append($menu_item_manual);
 
-my $menu_item_about = Gtk3::MenuItem->new_with_label("Über das Programm");
+my $menu_item_about = Gtk3::MenuItem->new_with_label("About exif_edit");
 $menu_item_about->signal_connect(activate => \&open_about_window);
 $menu_help->append($menu_item_about);
 $menubar->append($menu_item_help);
@@ -396,20 +396,26 @@ Gtk3->main();
 #################################################################################
 sub open_manual_window {
     my $top = Gtk3::Window->new('toplevel');
-    $top->set_title("Anleitung");
-    $top->set_default_size(400, 300);
+    $top->set_title("Manual");
+    $top->set_default_size(400, 400);
     $top->set_position('center');
 
     my $manual_txt = <<'END_manual';
-* Dieses Programm schreibt Kommentare zu Bildern als EXIF-Tag "Comment", wenn immer das ein Textfeld verlassen wird.
+This program writes comments to images as an EXIF 'Comment' tag whenever a text field is exited.
 
-* Ein Klick (egal mit welcher Mouse-Taste) auf den Dateinamen setzt als den Text "todel" in das Kommentarfeld.
-* Ein Links-Klick auf ein Thumbnail öffnet das Bild im Firefox.
-* Ein Rechtsklick auf ein Thumbnail öffnet das Bild im Gimp.
-* Das Menue enthält den Eintrag "Neu Laden" und macht genau das.
-* Der Eintrag "To Del" verschiebt alle Bilder in ein Unterverzeichnis 'todel', welches angelegt wird, wenn es nicht schon existiert und lädt anschließend die Thumbnails neu.
+* Clicking (with any mouse button) on the filename inserts the text 'todel' into the comment field.
+
+* Left-clicking on a thumbnail opens the image in the Chromium browser.
+
+* Right-clicking on a thumbnail opens the image in GIMP.
+
+* The menu contains the 'Reload' option, which does exactly that.
+
+* The 'To Del' option moves all images to a subdirectory named 'todel' (which is created if it doesn't already exist) and then reloads the thumbnails.
 
 END_manual
+
+    my $manual_txt_unicode = decode('UTF-8', $manual_txt);
 
     my $vbox = Gtk3::Box->new('vertical', 5);
     $vbox->set_border_width(10);
@@ -421,11 +427,11 @@ END_manual
     $textview->set_editable(0);
     $textview->set_cursor_visible(0);
     $textview->set_wrap_mode('word');
-    $textview->get_buffer->set_text($manual_txt);
+    $textview->get_buffer->set_text($manual_txt_unicode);
     $scrolled_win->add($textview);
     $vbox->pack_start($scrolled_win, TRUE, TRUE, 0);
 
-    my $close_button = Gtk3::Button->new("Schließen");
+    my $close_button = Gtk3::Button->new("Close");
     $close_button->signal_connect(clicked => sub { $top->destroy });
     $vbox->pack_start($close_button, FALSE, FALSE, 0);
     $top->show_all;
@@ -436,16 +442,22 @@ END_manual
 #################################################################################
 sub open_about_window {
     my $top = Gtk3::Window->new('toplevel');
-    $top->set_title("Über das Programm");
+    $top->set_title("About exif_edit");
     $top->set_default_size(400, 300);
     $top->set_position('center');
 
     my $about_txt = <<'END_about';
-* Dieses Programm schreibt Kommentare zu Bildern als EXIF-Tag "Comment".
+* This program writes comments to images as an EXIF 'Comment' tag.
 
-Ich übernehme für das Programm keine Garantie. Es kann frei geändert oder weitergegeben werden unter den selben Bedingungen wie Perl selbst.
+Disclaimer:
+
+This program is provided 'as is.' It may be freely modified or redistributed under the same terms as Perl itself.
+
+Programmer: Jörg Albrecht
 
 END_about
+
+    my $about_txt_unicode = decode('UTF-8', $about_txt);
 
     my $vbox = Gtk3::Box->new('vertical', 5);
     $vbox->set_border_width(10);
@@ -457,11 +469,11 @@ END_about
     $textview->set_editable(0);
     $textview->set_cursor_visible(0);
     $textview->set_wrap_mode('word');
-    $textview->get_buffer->set_text($about_txt);
+    $textview->get_buffer->set_text($about_txt_unicode);
     $scrolled_win->add($textview);
     $vbox->pack_start($scrolled_win, TRUE, TRUE, 0);
 
-    my $close_button = Gtk3::Button->new("Schließen");
+    my $close_button = Gtk3::Button->new("Close");
     $close_button->signal_connect(clicked => sub { $top->destroy });
     $vbox->pack_start($close_button, FALSE, FALSE, 0);
     $top->show_all;
