@@ -1,6 +1,8 @@
 Disclaimer:
 
 This program is provided “as is.” It may be freely modified or redistributed under the same terms as Perl itself.
+Please backup on your files before using this program on them.
+
 
 Prerequisits: 
 
