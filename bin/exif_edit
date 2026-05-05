@@ -328,7 +328,7 @@ sub load_images {
         $imageeventbox->signal_connect(button_press_event => sub {
             my ($widget, $event) = @_;
             if ($event->button == 1) {
-                system("/bin/sh", "-c", "firefox \"$captured_file\" &");
+                system("/bin/sh", "-c", "chromium \"$captured_file\" &");
             } elsif ($event->button == 3) {
                 system("gimp \"$captured_file\" &");
             }
