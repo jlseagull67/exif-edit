@@ -99,9 +99,11 @@ my $monitor_width = Gtk3::Gdk::Display::get_default()
                   ->get_primary_monitor()
                   ->get_geometry()->{width};
 my $thumbsize = floor(($monitor_width / $numofcolls) - 5 * ($numofcolls + 2) - 55);
+my $exifpanelsize = int($monitor_width * 0.125);   # 1/8 der Monitorbreite
 
 print "monitor_width $monitor_width\n";
 print "thumbsize $thumbsize\n";
+print "exifpanelsize $exifpanelsize\n";
 
 my $vbox_main = Gtk3::Box->new('vertical', 0);
 $window->add($vbox_main);
@@ -167,7 +169,7 @@ $scroll->add($vbox_images);
 # ── Rechte Seite: EXIF-Panel ─────────────────────────────────────────────────
 my $exif_panel = Gtk3::Box->new('vertical', 0);
 $exif_panel->get_style_context->add_class('exif-panel');
-$exif_panel->set_size_request(320, -1);
+$exif_panel->set_size_request($exifpanelsize, -1);
 $hpaned->pack2($exif_panel, FALSE, FALSE);
 
 # Titel-Label im EXIF-Panel
@@ -203,7 +205,8 @@ $exif_panel->pack_start($exif_scroll, TRUE, TRUE, 0);
 
 # Trennlinie setzen nachdem das Fenster gemalt wurde
 $window->signal_connect('realize' => sub {
-    $hpaned->set_position($monitor_width - 340);
+    my $total = $window->get_allocated_width();
+    $hpaned->set_position($total - $exifpanelsize - 6);  # 6px für den Divider itselves
 });
 
 #################################################################################
