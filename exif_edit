@@ -17,24 +17,39 @@ my $css_styles = <<'END_CSS';
 .thumbnail {
     padding: 5px 5px 5px 5px;
 }
+/* Focus frame around thumbnail */
 .thumbnail-focused {
     border: 1px solid lightgreen;
     border-radius: 5px;
     margin:  5px 5px 5px 5px;
 }
+/* Horizontal separator between Exif-Header and Exif-Panel */
+.exif-separator {
+    color: #cccccc;
+    background-color: #cccccc;
+    min-height: 1px;
+}
+/* Vertical separator between Fotos and Exif-Panel */
+paned separator {
+    color: #cccccc;
+    background-color: #cccccc;
+    min-width: 1px;
+    border: none;
+    box-shadow: none;
+}
 .exif-panel {
-    background-color: #16213e;
-    border-left: 2px solid #0f3460;
+    background-color: transparent;
+    border-left: 2px solid #cccccc;
 }
 .exif-title {
-    color: #58a6ff;
+    color: transparent;
     font-size: 13px;
     font-weight: bold;
     padding: 6px 8px 4px 8px;
 }
 treeview {
-    background-color: #16213e;
-    color: #c9d1d9;
+    background-color: transparent;
+    color: #cccccc;
     font-family: "Monospace";
     font-size: 11px;
 }
@@ -43,8 +58,8 @@ treeview:selected {
     color: #ffffff;
 }
 treeview header button {
-    background-color: #0f3460;
-    color: #58a6ff;
+    background-color: transparent;
+    color: #cccccc;
     border: none;
     font-weight: bold;
     font-size: 11px;
@@ -180,6 +195,7 @@ $exif_panel->pack_start($exif_title, FALSE, FALSE, 0);
 
 # Separator
 my $sep = Gtk3::Separator->new('horizontal');
+$sep->get_style_context->add_class('exif-separator');
 $exif_panel->pack_start($sep, FALSE, FALSE, 0);
 
 # TreeView für EXIF-Daten
@@ -218,7 +234,7 @@ sub update_exif_panel {
 
     my $basename = basename($filepath);
     $exif_title->set_markup(
-        '<span foreground="#58a6ff" font="12" weight="bold">  EXIF: '
+        '<span foreground="#cccccc" font="12" weight="bold">  EXIF: '
         . $basename . '</span>'
     );
 
@@ -304,7 +320,7 @@ sub load_images {
 
     # EXIF-Panel zurücksetzen
     $exif_store->clear;
-    $exif_title->set_markup('<span foreground="#58a6ff" font="12" weight="bold">  EXIF</span>');
+    $exif_title->set_markup('<span foreground="#cccccc" font="12" weight="bold">  EXIF</span>');
 
     my @images = sort glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     my $actfolder = `pwd`;
