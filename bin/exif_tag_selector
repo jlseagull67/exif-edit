@@ -14,19 +14,75 @@ sub u8 {
 }
 
 # ------------------------------------------------------------------ #
-#  Konfigurationsdatei                                                 #
+#  Config-File                                                #
 # ------------------------------------------------------------------ #
 my $CONFIG_FILE = $ENV{HOME} . '/.config/exif_selector/config.yaml';
 
 # ------------------------------------------------------------------ #
-#  All known ExifTool-Tags (grouped by Categorie)            #
+#  All known ExifTool-Tags (grouped by Category in alphabetical order) #
 # ------------------------------------------------------------------ #
 my %TAG_GROUPS = (
-    'Datei-Informationen' => [qw(
-        FileName FileSize FileModifyDate FileAccessDate
-        FileCreateDate FileType FileTypeExtension MIMEType
+    'ACDSee / Software-specific' => [qw(
+        ACDSeeRegion ACDSeeRegionName ACDSeeRegionType
+        ACDSeeRegionALGArea ACDSeeRegionDLYArea
+        ACDSeeRegionAppliedToDimensions
     )],
-    'EXIF – Kamera &amp; Aufnahme' => [qw(
+    'AF – Autofocus' => [qw(
+        AFPoint AFPointInFocus AFPointSelected AFPointMode AFPointSel
+        AFArea AFAreaMode AFAreaModeSetting AFAreaSelectMethod
+        AFAssist AFAssistBeam AFAssistLamp
+        AFFineTune AFFineTuneAdj AFFineTuneAdjTele
+        AFMicroAdj AFMicroAdjMode AFMicroAdjValue AFMicroadjustment
+        AFMode AFPerformance AFResponse AFResult AFSearch
+        AFSubjectDetection AFTrackingMode
+        AFHold AFDuringLiveView AFActivation AFButtonPressed
+        AFConfidence AFInFocus AFStatus AFStable
+        AFImageHeight AFImageWidth
+    )],
+    'Audio – Metadata' => [qw(
+        AudioCodec AudioBitrate AudioChannels AudioSampleRate
+        AudioStreamType AudioStreamDuration AudioStreamFrameCount
+        SoundFormat Channels SampleRate SampleSize
+        WMADRCAverageReference WMADRCAverageTarget
+        WMADRCPeakReference WMADRCPeakTarget
+        Balance Balance1 Balance2
+    )],
+    'Composite / Calculated Values' => [qw(
+        Aperture ShutterSpeed LightValue
+        FocalLength35efl HyperfocalDistance
+        ScaleFactor35efl CircleOfConfusion DOF
+        GPSPosition Megapixels ImageSize
+        RunTimeSincePowerUp
+    )],
+    'DICOM / Medicin' => [qw(
+        PatientName PatientID PatientBirthDate PatientSex PatientAge
+        PatientWeight StudyDescription SeriesDescription
+        StudyDate StudyTime StudyID
+        Modality Manufacturer ManufacturerModelName
+        InstitutionName InstitutionAddress
+        ReferringPhysicianName PerformingPhysicianName
+        StudyInstanceUID SeriesInstanceUID SOPInstanceUID SOPClassUID
+        BodyPartExamined
+        KVP ExposureTime XRayTubeCurrent
+        WindowCenter WindowWidth
+        SliceThickness SliceLocation
+        PixelSpacing PixelAspectRatio
+        Rows Columns NumberOfFrames BitsAllocated BitsStored
+        PhotometricInterpretation
+        ImagePositionPatient ImageOrientationPatient
+    )],
+    'Drone / UAV' => [qw(
+        DroneModel DroneSerialNumber DroneID
+        FlightMode FlightTime FlightXSpeed FlightYSpeed FlightZSpeed
+        CameraModel GimbalDegree GimbalPitchDegree GimbalRollDegree GimbalYawDegree
+        RelativeAltitude AbsoluteAltitude
+        Pitch Roll Yaw PitchAngle RollAngle YawAngle
+        GimbalReverse SelfData HorizonLevelData
+        SpeedX SpeedY SpeedZ
+        WindSpeed WindDirection WindMode
+        BatteryPercent BatteryTemperature MotorOnTime
+    )],
+    'EXIF – Camera &amp; Recording' => [qw(
         Make Model LensModel LensID LensMake
         Software SerialNumber CameraSerialNumber
         ExposureTime FNumber ISO ExposureProgram ExposureMode
@@ -38,12 +94,15 @@ my %TAG_GROUPS = (
         Contrast Saturation Sharpness
         ColorSpace ColorComponents
     )],
-    'EXIF – Datum &amp; Zeit' => [qw(
+    'EXIF-Edit specific' => [qw(
+        Comment
+    )],
+    'EXIF – Date &amp; Time' => [qw(
         DateTimeOriginal CreateDate ModifyDate
         SubSecTime SubSecTimeOriginal SubSecTimeDigitized
         OffsetTime OffsetTimeOriginal
     )],
-    'EXIF – Bild-Eigenschaften' => [qw(
+    'EXIF – Picture-Properties' => [qw(
         ImageWidth ImageHeight ExifImageWidth ExifImageHeight
         Orientation ResolutionUnit XResolution YResolution
         BitsPerSample SamplesPerPixel PhotometricInterpretation
@@ -60,7 +119,38 @@ my %TAG_GROUPS = (
         GPSDestBearing GPSDestDistance GPSProcessingMethod
         GPSHPositioningError
     )],
-    'IPTC – Redaktionelle Daten' => [qw(
+    'File-Information' => [qw(
+        FileName FileSize FileModifyDate FileAccessDate
+        FileCreateDate FileType FileTypeExtension MIMEType
+    )],
+    'GPS – Advanced' => [qw(
+        GPSCoordinates GPSAltitudeMeter GPSCoordinate
+        GPSPosition2 GPSDateTime GPSValid
+        AccelerationX AccelerationY AccelerationZ
+        AngularVelocityX AngularVelocityY AngularVelocityZ
+        WheelspeedLeftDriven WheelspeedRightDriven
+        WaterDepth
+        LocationName LocationCity LocationState LocationCountry
+        LocationCreatedCity LocationCreatedCountryCode
+        LocationCreatedCountryName LocationCreatedProvinceState
+        LocationShownCity LocationShownCountryCode
+        LocationShownCountryName LocationShownProvinceState
+        LocationShownSublocation
+    )],
+    'ICC – Colorprofile' => [qw(
+        ProfileDescription ProfileCopyright ProfileVersion
+        ProfileClass ProfileConnectionSpace ProfileCreator ProfileID
+        ProfileDateTime ProfileFileSignature ProfileFlags
+        ColorSpaceData RenderingIntent ConnectionSpaceIlluminant
+        MediaWhitePoint MediaBlackPoint DeviceManufacturer DeviceModel
+        ViewingCondDesc ViewingCondIlluminant
+        Luminance MeasurementObserver MeasurementBacking
+        MeasurementGeometry MeasurementFlare MeasurementIlluminant
+        ChromaticAdaptation RedTRC GreenTRC BlueTRC
+        RedMatrixColumn GreenMatrixColumn BlueMatrixColumn
+        ProfilePCS ProfileID ProfileSize
+    )],
+    'IPTC – Editorial Data' => [qw(
         ObjectName Caption-Abstract Keywords
         Category SupplementalCategories
         Byline BylineTitle Credit Source
@@ -72,26 +162,110 @@ my %TAG_GROUPS = (
         EditStatus FixtureIdentifier
         Writer-Editor ImageType
     )],
-    'XMP – Dublin Core &amp; Rights' => [qw(
-        XMP:Title XMP:Description XMP:Subject XMP:Creator
-        XMP:Rights XMP:Source XMP:Identifier XMP:Language
-        XMP:Publisher XMP:Relation XMP:Coverage XMP:Format
-        XMP:Type
+    'IPTC – Extensions (IPTC4XMP)' => [qw(
+        ArtworkOrObject ArtworkCopyrightNotice ArtworkCreator
+        ArtworkDateCreated ArtworkSource ArtworkSourceInventoryNo
+        ArtworkTitle ContentWarning
+        CvTerm CvTermCvId CvTermId CvTermName CvTermRefinedAbout
+        DigitalImageGUID DigitalSourceType
+        EmbdEncRightsExpr EncRightsExpr
+        EntityWithRole EventExt
+        LinkedEncRightsExpr
+        PersonInImage PersonInImageWDetails
+        ProductInImage ProductInImageDescription ProductInImageGTIN
+        ProductInImageName
+        RegionBoundaryH RegionBoundaryShape RegionBoundaryUnit
+        RegionBoundaryW RegionBoundaryX RegionBoundaryY
+        RegistryEntryRole RegistryID RegistryOrganisationID
+        RightsExprEncType RightsExprLangID
+        Source LocationCreated LocationShown
+        MaxAvailHeight MaxAvailWidth
     )],
-    'XMP – Kamera (exif/aux)' => [qw(
+    'JFIF / JPEG-Internals' => [qw(
+        JFIFVersion ResolutionUnit XResolution YResolution
+        Comment APP0 APP1 APP2 APP14
+        EncodingProcess ColorComponents
+        DCTEncodeVersion APP12_FlashUsed APP12_FirmwareVersion
+        APP12_CameraModel APP12_Miscellaneous
+    )],
+    'MakerNotes' => [qw(
+        MakerNote CanonModelID NikonType2
+        SonyModelID OlympusModelID PanasonicModelID
+        FujiFilmModelID PentaxModelID
+    )],
+    'Olympus Specific' => [qw(
+        LensType FocusDistance FocalLength35efl
+        ImageStabilization RollAngle
+    )],
+    'Panorama &amp; Stitching' => [qw(
+        PanoramaMode PanoramaDirection PanoramaFieldOfView
+        PanoramaSourceImages PanoramaSourceWidth PanoramaSourceHeight
+        PanoramaCropTop PanoramaCropBottom PanoramaCropLeft PanoramaCropRight
+        PanoramaFullWidth PanoramaFullHeight
+        StitchingInfo LevelAngle PoseRollDegrees PosePitchDegrees
+        FullPanoWidthPixels FullPanoHeightPixels
+        CroppedAreaLeftPixels CroppedAreaTopPixels
+        CroppedAreaImageWidthPixels CroppedAreaImageHeightPixels
+        LargestValidInteriorRectLeft LargestValidInteriorRectTop
+        LargestValidInteriorRectWidth LargestValidInteriorRectHeight
+        ProjectionType UsePanoramaViewer CaptureSoftware
+    )],
+    'Thumbnail &amp; Preview' => [qw(
+        ThumbnailImage ThumbnailOffset ThumbnailLength
+        ThumbnailImageSize PreviewImageSize
+        JpgFromRaw OtherImage
+    )],
+    'Various' => [qw(
+        Rating RatingPercent Label Urgency
+        PickLabel ColorLabel
+        Keyword Subject Tag Category Tags
+        Description Title Caption Abstract
+        Marked Watched Flag
+        WebStatement CopyrightURL UsageTerms
+        CreateDate ModifyDate MetadataDate
+        PageCount WordCount CharacterCount ParagraphCount
+        Language LanguageCode
+        Author Creator Publisher
+        SoftwareVersion ApplicationVersion
+        Warning Error
+    )],
+    'Video – Recording &amp; Codec' => [qw(
+        VideoCodec VideoFrameRate VideoAvgFrameRate
+        VideoScanType VideoFieldOrder VideoColorimetry
+        VideoStreamType VideoStreamFrameCount VideoStreamDuration
+        MediaDuration MediaDataSize MediaDataOffset
+        MatrixCoefficients TransferCharacteristics ColourPrimaries
+        VideoFullRangeFlag AspectRatioX AspectRatioY
+        BitDepth BitRate MaxBitrate NominalBitrate
+        HandlerDescription HandlerType HandlerVendorID
+        TrackDuration TrackModifyDate TrackCreateDate
+        MovieHeaderVersion MovieDuration
+    )],
+    'White Balance – Rawdata' => [qw(
+        WB_RGBLevels WB_RGBLevelsAsShot WB_RGBLevelsAuto
+        WB_RGBLevelsDaylight WB_RGBLevelsFlash WB_RGBLevelsFluorescent
+        WB_RGBLevelsTungsten WB_RGBLevelsCloudy
+        WB_RGGBLevels WB_RGGBLevelsAsShot WB_RGGBLevelsDaylight
+        WB_RGGBLevelsFlash WB_RGGBLevelsFluorescent
+        WB_RGGBLevelsTungsten WB_RGGBLevelsCloudy
+        WB_RBLevels WB_RBLevelsAsShot WB_RBLevelsDaylight
+        WhiteBalance WhiteBalanceAdj WhiteBalanceBias
+        WhiteBalanceFineTune WhiteBalanceMode WhiteBalanceSet
+        WhiteBalanceSetting WhiteBalanceTable WhiteBalanceTemperature
+        WhitePoint WhiteLevel
+    )],
+    'XMP – Camera (exif/aux)' => [qw(
         XMP:ExposureTime XMP:FNumber XMP:ExposureProgram
         XMP:ISOSpeedRatings XMP:DateTimeOriginal
         XMP:FocalLength XMP:Flash XMP:WhiteBalance
         XMP:LensModel XMP:LensID XMP:LensInfo
         XMP:SerialNumber XMP:Firmware
     )],
-    'XMP – Photoshop &amp; Bridge' => [qw(
-        XMP:ColorMode XMP:ICCProfile
-        XMP:DateCreated XMP:Credit XMP:Source
-        XMP:Headline XMP:Instructions XMP:TransmissionReference
-        XMP:Category XMP:SupplementalCategories
-        XMP:CaptionWriter XMP:City XMP:State XMP:Country
-        XMP:AuthorsPosition
+    'XMP – Dublin Core &amp; Rights' => [qw(
+        XMP:Title XMP:Description XMP:Subject XMP:Creator
+        XMP:Rights XMP:Source XMP:Identifier XMP:Language
+        XMP:Publisher XMP:Relation XMP:Coverage XMP:Format
+        XMP:Type
     )],
     'XMP – Lightroom / CRS' => [qw(
         XMP:ProcessVersion XMP:WhiteBalance
@@ -110,76 +284,108 @@ my %TAG_GROUPS = (
         XMP:VignetteAmount XMP:GrainAmount
         XMP:Rating XMP:Label XMP:PickLabel
     )],
-    'Composite / Berechnete Werte' => [qw(
-        Aperture ShutterSpeed LightValue
-        FocalLength35efl HyperfocalDistance
-        ScaleFactor35efl CircleOfConfusion DOF
-        GPSPosition Megapixels ImageSize
-        RunTimeSincePowerUp
+    'XMP – Media Management' => [qw(
+        XMP:DocumentID XMP:InstanceID XMP:OriginalDocumentID
+        XMP:DerivedFrom XMP:History XMP:ManagedFrom
+        XMP:Manager XMP:ManageTo XMP:ManageUI
+        XMP:RenditionClass XMP:RenditionParams
+        XMP:VersionID XMP:Versions XMP:LastURL
+        XMP:RenditionOf XMP:SaveID
     )],
-    'Thumbnail &amp; Vorschau' => [qw(
-        ThumbnailImage ThumbnailOffset ThumbnailLength
-        ThumbnailImageSize PreviewImageSize
-        JpgFromRaw OtherImage
+    'XMP – PLUS Licence' => [qw(
+        XMP:CopyrightOwner XMP:ImageCreator XMP:ImageSupplier
+        XMP:ImageSupplierID XMP:ImageSupplierImageID
+        XMP:LicensorID XMP:LicensorName XMP:LicensorURL
+        XMP:LicensorEmail XMP:LicensorTelephone
+        XMP:LicenseeID XMP:LicenseeName
+        XMP:LicenseStartDate XMP:LicenseEndDate
+        XMP:MediaSummaryCode XMP:DigitalSourceType
+        XMP:ModelReleaseID XMP:ModelReleaseStatus
+        XMP:PropertyReleaseID XMP:PropertyReleaseStatus
+        XMP:Reuse XMP:OtherConstraints
     )],
-    'MakerNotes (herstellerspezifisch)' => [qw(
-        MakerNote CanonModelID NikonType2
-        SonyModelID OlympusModelID PanasonicModelID
-        FujiFilmModelID PentaxModelID
-    )],
-    'EXIF-Edit specific' => [qw(
-        Comment
+    'XMP – Photoshop &amp; Bridge' => [qw(
+        XMP:ColorMode XMP:ICCProfile
+        XMP:DateCreated XMP:Credit XMP:Source
+        XMP:Headline XMP:Instructions XMP:TransmissionReference
+        XMP:Category XMP:SupplementalCategories
+        XMP:CaptionWriter XMP:City XMP:State XMP:Country
+        XMP:AuthorsPosition
     )],
 );
 
+
 # Geordnete Gruppenreihenfolge
 my @GROUP_ORDER = (
-    'General Config',
-    'Datei-Informationen',
+    'File-Information',
     'EXIF-Edit specific',
-    'EXIF – Kamera & Aufnahme',
-    'EXIF – Datum & Zeit',
-    'EXIF – Bild-Eigenschaften',
+    'Olympus Specific',
+    'EXIF – Camera &amp; Recording',
+    'EXIF – Date &amp; Time',
+    'EXIF – Picture-Properties',
     'EXIF – GPS',
-    'IPTC – Redaktionelle Daten',
-    'XMP – Dublin Core & Rights',
-    'XMP – Kamera (exif/aux)',
-    'XMP – Photoshop & Bridge',
+    'GPS – Advanced',
+    'AF – Autofocus',
+    'White Balance – Rawdata',
+    'IPTC – Editorial Data',
+    'IPTC – Extensions (IPTC4XMP)',
+    'XMP – Dublin Core &amp; Rights',
+    'XMP – Camera (exif/aux)',
+    'XMP – Photoshop &amp; Bridge',
     'XMP – Lightroom / CRS',
-    'Composite / Berechnete Werte',
-    'Thumbnail & Vorschau',
-    'MakerNotes (herstellerspezifisch)',
+    'XMP – Media Management',
+    'XMP – PLUS Licence',
+    'ICC – Colorprofile',
+    'Panorama &amp; Stitching',
+    'Drone / UAV',
+    'Video – Recording &amp; Codec',
+    'Audio – Metadata',
+    'ACDSee / Software-spezific',
+    'DICOM / Medicin',
+    'JFIF / JPEG-Internals',
+    'Various',
+    'Composite / Calculated Values',
+    'Thumbnail &amp; Preview',
+    'Various',
 );
 
 # ------------------------------------------------------------------ #
 #  Load Config                                                       #
 # ------------------------------------------------------------------ #
 sub load_config {
-    return {} unless -f $CONFIG_FILE;
+    return ({}, {}) unless -f $CONFIG_FILE;
     my $yaml = YAML::Tiny->read($CONFIG_FILE);
-    return {} unless $yaml && $yaml->[0];
+    return ({}, {}) unless $yaml && $yaml->[0];
     my $cfg = $yaml->[0];
-    # selected_tags-Array in ein Hash für schnelle Suche umwandeln
+    # convert selected_tags-Array to Hash for quick search
     my %selected;
     if (ref $cfg->{selected_tags} eq 'ARRAY') {
         $selected{$_} = 1 for @{ $cfg->{selected_tags} };
     }
-    return \%selected;
+    my %settings = (
+        action_left_mousebutton   => $cfg->{action_left_mousebutton}   // '',
+        action_right_mousebutton  => $cfg->{action_right_mousebutton}  // '',
+        name_of_exif_edit_comment => $cfg->{name_of_exif_edit_comment} // '',
+    );
+    return (\%selected, \%settings);
 }
 
 # ------------------------------------------------------------------ #
 #  Save Config                                                       #
 # ------------------------------------------------------------------ #
 sub save_config {
-    my ($selected_ref) = @_;
+    my ($selected_ref, $settings_ref) = @_;
     my @tags = sort keys %$selected_ref;
 
     my $dir = dirname($CONFIG_FILE);
     make_path($dir) unless -d $dir;
 
     my $yaml = YAML::Tiny->new({
-        selected_tags => \@tags,
-        saved_at      => scalar localtime,
+        selected_tags             => \@tags,
+        action_left_mousebutton   => $settings_ref->{action_left_mousebutton}   // '',
+        action_right_mousebutton  => $settings_ref->{action_right_mousebutton}  // '',
+        name_of_exif_edit_comment => $settings_ref->{name_of_exif_edit_comment} // '',
+        saved_at                  => scalar localtime,
     });
     $yaml->write($CONFIG_FILE);
     return scalar @tags;
@@ -189,10 +395,10 @@ sub save_config {
 #  build GUI                                                         #
 # ------------------------------------------------------------------ #
 my %checkboxes;          # tag => GtkCheckButton
-my %selected_tags;       # aktuelle Auswahl
+my %selected_tags;       # Selection of Tags
 
 # Load previous Config
-my $prev = load_config();
+my ($prev, $prev_settings) = load_config();
 %selected_tags = %$prev;
 
 # Main-Window
@@ -218,6 +424,49 @@ $general_title_header->set_border_width(14);
 $general_title_header->pack_start($general_title_label, 1, 1, 0);
 $outer_vbox->pack_start($general_title_header, 0, 0, 0);
 
+##################################
+# General Settings – Textboxen
+##################################
+my $gs_grid = Gtk3::Grid->new();
+$gs_grid->set_column_spacing(12);
+$gs_grid->set_row_spacing(8);
+$gs_grid->set_border_width(14);
+$gs_grid->set_margin_top(0);
+$outer_vbox->pack_start($gs_grid, 0, 0, 0);
+
+# Label + Entry: Name of EXIF-Edit Comment
+my $lbl_comment = Gtk3::Label->new(u8('Name of the EXIF-Edit-Comment:'));
+$lbl_comment->set_halign('start');
+my $entry_comment = Gtk3::Entry->new();
+$entry_comment->set_placeholder_text(u8('i.e. Comment'));
+$entry_comment->set_hexpand(1);
+$gs_grid->attach($lbl_comment,    0, 0, 1, 1);
+$gs_grid->attach($entry_comment,  1, 0, 1, 1);
+
+# Label + Entry: Action Left Mousebutton
+my $lbl_left = Gtk3::Label->new(u8('Action of Left Mouse Button:'));
+$lbl_left->set_halign('start');
+my $entry_left = Gtk3::Entry->new();
+$entry_left->set_placeholder_text(u8('i.e. Chromium'));
+$entry_left->set_hexpand(1);
+$gs_grid->attach($lbl_left,   0, 1, 1, 1);
+$gs_grid->attach($entry_left, 1, 1, 1, 1);
+
+# Label + Entry: Action Right Mousebutton
+my $lbl_right = Gtk3::Label->new(u8('Action of Right Mouse Button:'));
+$lbl_right->set_halign('start');
+my $entry_right = Gtk3::Entry->new();
+$entry_right->set_placeholder_text(u8('i.e. gimp'));
+$entry_right->set_hexpand(1);
+$gs_grid->attach($lbl_right,   0, 2, 1, 1);
+$gs_grid->attach($entry_right, 1, 2, 1, 1);
+
+# Pre-fill from saved config
+$entry_comment->set_text($prev_settings->{name_of_exif_edit_comment});
+$entry_left->set_text($prev_settings->{action_left_mousebutton});
+$entry_right->set_text($prev_settings->{action_right_mousebutton});
+
+$outer_vbox->pack_start(Gtk3::Separator->new('horizontal'), 0, 0, 0);
 
 # ---- Header ----
 my $header = Gtk3::Box->new('horizontal', 12);
@@ -274,7 +523,6 @@ for my $group (@GROUP_ORDER) {
 
     # Group Headers
     my $group_label = Gtk3::Label->new("<b>$group</b>");
-    my $group_label_unicode = decode('UTF-8', $group_label);
     $group_label->set_use_markup(1);
     $group_label->set_halign('start');
     $group_label->set_margin_top(14);
@@ -324,15 +572,15 @@ my $footer = Gtk3::Box->new('horizontal', 10);
 $footer->set_border_width(12);
 
 my $info_label = Gtk3::Label->new('');
-$info_label->set_markup(u8('<span size="10240">Konfiguration: ' . $CONFIG_FILE . '</span>'));
+$info_label->set_markup(u8('<span size="10240">Configuration: ' . $CONFIG_FILE . '</span>'));
 $info_label->set_halign('start');
 $info_label->set_ellipsize('start');
 $footer->pack_start($info_label, 1, 1, 0);
 
-my $btn_save = Gtk3::Button->new_with_label('Auswahl speichern');
+my $btn_save = Gtk3::Button->new_with_label('Save');
 $btn_save->get_style_context->add_class('suggested-action');
 
-my $btn_quit = Gtk3::Button->new_with_label('Beenden');
+my $btn_quit = Gtk3::Button->new_with_label('End');
 
 $footer->pack_end($btn_quit, 0, 0, 0);
 $footer->pack_end($btn_save, 0, 0, 0);
@@ -377,14 +625,19 @@ $btn_deselect_all->signal_connect(clicked => sub {
 
 # Save
 $btn_save->signal_connect(clicked => sub {
-    my $count = save_config(\%selected_tags);
+    my %settings = (
+        action_left_mousebutton   => $entry_left->get_text(),
+        action_right_mousebutton  => $entry_right->get_text(),
+        name_of_exif_edit_comment => $entry_comment->get_text(),
+    );
+    my $count = save_config(\%selected_tags, \%settings);
 
     my $dialog = Gtk3::MessageDialog->new(
         $window,
         'destroy-with-parent',
         'info',
         'ok',
-        "$count Tag(s) wurden in der Konfiguration gespeichert."
+        "$count Tag(s) are saved in config."
     );
     $dialog->set_title('Gespeichert');
     $dialog->run;
