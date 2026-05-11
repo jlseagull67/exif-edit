@@ -1,0 +1,401 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use utf8;
+use Encode qw(decode);
+use Gtk3 '-init';
+use YAML::Tiny;
+use File::Basename qw(dirname);
+use File::Path     qw(make_path);
+
+# Helper for UTF-8 encoding for GTK3-Module
+sub u8 {
+    decode('UTF-8', $_[0])
+}
+
+# ------------------------------------------------------------------ #
+#  Konfigurationsdatei                                                 #
+# ------------------------------------------------------------------ #
+my $CONFIG_FILE = $ENV{HOME} . '/.config/exif_selector/config.yaml';
+
+# ------------------------------------------------------------------ #
+#  All known ExifTool-Tags (grouped by Categorie)            #
+# ------------------------------------------------------------------ #
+my %TAG_GROUPS = (
+    'Datei-Informationen' => [qw(
+        FileName FileSize FileModifyDate FileAccessDate
+        FileCreateDate FileType FileTypeExtension MIMEType
+    )],
+    'EXIF – Kamera &amp; Aufnahme' => [qw(
+        Make Model LensModel LensID LensMake
+        Software SerialNumber CameraSerialNumber
+        ExposureTime FNumber ISO ExposureProgram ExposureMode
+        ExposureCompensation MeteringMode LightSource Flash
+        FocalLength FocalLengthIn35mmFormat
+        MaxApertureValue ApertureValue ShutterSpeedValue
+        BrightnessValue SubjectDistance
+        WhiteBalance DigitalZoomRatio SceneCaptureType
+        Contrast Saturation Sharpness
+        ColorSpace ColorComponents
+    )],
+    'EXIF – Datum &amp; Zeit' => [qw(
+        DateTimeOriginal CreateDate ModifyDate
+        SubSecTime SubSecTimeOriginal SubSecTimeDigitized
+        OffsetTime OffsetTimeOriginal
+    )],
+    'EXIF – Bild-Eigenschaften' => [qw(
+        ImageWidth ImageHeight ExifImageWidth ExifImageHeight
+        Orientation ResolutionUnit XResolution YResolution
+        BitsPerSample SamplesPerPixel PhotometricInterpretation
+        Compression CompressedBitsPerPixel
+        YCbCrPositioning YCbCrSubSampling
+    )],
+    'EXIF – GPS' => [qw(
+        GPSLatitude GPSLongitude GPSAltitude GPSAltitudeRef
+        GPSLatitudeRef GPSLongitudeRef
+        GPSTimeStamp GPSDateStamp GPSStatus
+        GPSMeasureMode GPSDOP GPSSpeed GPSSpeedRef
+        GPSTrack GPSTrackRef GPSImgDirection GPSImgDirectionRef
+        GPSMapDatum GPSDestLatitude GPSDestLongitude
+        GPSDestBearing GPSDestDistance GPSProcessingMethod
+        GPSHPositioningError
+    )],
+    'IPTC – Redaktionelle Daten' => [qw(
+        ObjectName Caption-Abstract Keywords
+        Category SupplementalCategories
+        Byline BylineTitle Credit Source
+        CopyrightNotice Contact
+        Headline SpecialInstructions
+        DateCreated TimeCreated
+        City Sub-location Province-State Country-PrimaryLocationCode
+        Country-PrimaryLocationName OriginalTransmissionReference
+        EditStatus FixtureIdentifier
+        Writer-Editor ImageType
+    )],
+    'XMP – Dublin Core &amp; Rights' => [qw(
+        XMP:Title XMP:Description XMP:Subject XMP:Creator
+        XMP:Rights XMP:Source XMP:Identifier XMP:Language
+        XMP:Publisher XMP:Relation XMP:Coverage XMP:Format
+        XMP:Type
+    )],
+    'XMP – Kamera (exif/aux)' => [qw(
+        XMP:ExposureTime XMP:FNumber XMP:ExposureProgram
+        XMP:ISOSpeedRatings XMP:DateTimeOriginal
+        XMP:FocalLength XMP:Flash XMP:WhiteBalance
+        XMP:LensModel XMP:LensID XMP:LensInfo
+        XMP:SerialNumber XMP:Firmware
+    )],
+    'XMP – Photoshop &amp; Bridge' => [qw(
+        XMP:ColorMode XMP:ICCProfile
+        XMP:DateCreated XMP:Credit XMP:Source
+        XMP:Headline XMP:Instructions XMP:TransmissionReference
+        XMP:Category XMP:SupplementalCategories
+        XMP:CaptionWriter XMP:City XMP:State XMP:Country
+        XMP:AuthorsPosition
+    )],
+    'XMP – Lightroom / CRS' => [qw(
+        XMP:ProcessVersion XMP:WhiteBalance
+        XMP:Temperature XMP:Tint
+        XMP:Exposure2012 XMP:Contrast2012
+        XMP:Highlights2012 XMP:Shadows2012
+        XMP:Whites2012 XMP:Blacks2012
+        XMP:Clarity2012 XMP:Dehaze
+        XMP:Vibrance XMP:Saturation
+        XMP:HueAdjustmentRed XMP:SaturationAdjustmentRed
+        XMP:LuminanceAdjustmentRed
+        XMP:SharpenRadius XMP:SharpenDetail XMP:SharpenEdgeMasking
+        XMP:LuminanceSmoothing XMP:ColorNoiseReduction
+        XMP:LensProfileEnable XMP:LensProfileSetup
+        XMP:PerspectiveVertical XMP:PerspectiveHorizontal
+        XMP:VignetteAmount XMP:GrainAmount
+        XMP:Rating XMP:Label XMP:PickLabel
+    )],
+    'Composite / Berechnete Werte' => [qw(
+        Aperture ShutterSpeed LightValue
+        FocalLength35efl HyperfocalDistance
+        ScaleFactor35efl CircleOfConfusion DOF
+        GPSPosition Megapixels ImageSize
+        RunTimeSincePowerUp
+    )],
+    'Thumbnail &amp; Vorschau' => [qw(
+        ThumbnailImage ThumbnailOffset ThumbnailLength
+        ThumbnailImageSize PreviewImageSize
+        JpgFromRaw OtherImage
+    )],
+    'MakerNotes (herstellerspezifisch)' => [qw(
+        MakerNote CanonModelID NikonType2
+        SonyModelID OlympusModelID PanasonicModelID
+        FujiFilmModelID PentaxModelID
+    )],
+    'EXIF-Edit specific' => [qw(
+        Comment
+    )],
+);
+
+# Geordnete Gruppenreihenfolge
+my @GROUP_ORDER = (
+    'General Config',
+    'Datei-Informationen',
+    'EXIF-Edit specific',
+    'EXIF – Kamera & Aufnahme',
+    'EXIF – Datum & Zeit',
+    'EXIF – Bild-Eigenschaften',
+    'EXIF – GPS',
+    'IPTC – Redaktionelle Daten',
+    'XMP – Dublin Core & Rights',
+    'XMP – Kamera (exif/aux)',
+    'XMP – Photoshop & Bridge',
+    'XMP – Lightroom / CRS',
+    'Composite / Berechnete Werte',
+    'Thumbnail & Vorschau',
+    'MakerNotes (herstellerspezifisch)',
+);
+
+# ------------------------------------------------------------------ #
+#  Load Config                                                       #
+# ------------------------------------------------------------------ #
+sub load_config {
+    return {} unless -f $CONFIG_FILE;
+    my $yaml = YAML::Tiny->read($CONFIG_FILE);
+    return {} unless $yaml && $yaml->[0];
+    my $cfg = $yaml->[0];
+    # selected_tags-Array in ein Hash für schnelle Suche umwandeln
+    my %selected;
+    if (ref $cfg->{selected_tags} eq 'ARRAY') {
+        $selected{$_} = 1 for @{ $cfg->{selected_tags} };
+    }
+    return \%selected;
+}
+
+# ------------------------------------------------------------------ #
+#  Save Config                                                       #
+# ------------------------------------------------------------------ #
+sub save_config {
+    my ($selected_ref) = @_;
+    my @tags = sort keys %$selected_ref;
+
+    my $dir = dirname($CONFIG_FILE);
+    make_path($dir) unless -d $dir;
+
+    my $yaml = YAML::Tiny->new({
+        selected_tags => \@tags,
+        saved_at      => scalar localtime,
+    });
+    $yaml->write($CONFIG_FILE);
+    return scalar @tags;
+}
+
+# ------------------------------------------------------------------ #
+#  build GUI                                                         #
+# ------------------------------------------------------------------ #
+my %checkboxes;          # tag => GtkCheckButton
+my %selected_tags;       # aktuelle Auswahl
+
+# Load previous Config
+my $prev = load_config();
+%selected_tags = %$prev;
+
+# Main-Window
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title("ExifTool \x{2013} Tag-Auswahl");
+$window->set_default_size(750, 700);
+$window->set_border_width(0);
+$window->signal_connect(destroy => sub { Gtk3->main_quit });
+
+# Outer vertical Box
+my $outer_vbox = Gtk3::Box->new('vertical', 0);
+$window->add($outer_vbox);
+
+##################################
+# General Settings Section
+##################################
+my $general_title_label = Gtk3::Label->new('');
+$general_title_label->set_markup('<span weight="bold" size="14336">General Settings</span>');
+$general_title_label->set_halign('start');
+
+my $general_title_header = Gtk3::Box->new('horizontal', 12);
+$general_title_header->set_border_width(14);
+$general_title_header->pack_start($general_title_label, 1, 1, 0);
+$outer_vbox->pack_start($general_title_header, 0, 0, 0);
+
+
+# ---- Header ----
+my $header = Gtk3::Box->new('horizontal', 12);
+$header->set_border_width(14);
+
+my $title_label = Gtk3::Label->new('');
+$title_label->set_markup('<span weight="bold" size="14336">ExifTool Tag-Selection</span>');
+$title_label->set_halign('start');
+$header->pack_start($title_label, 1, 1, 0);
+
+my $status_label = Gtk3::Label->new('');
+$status_label->set_halign('end');
+$header->pack_end($status_label, 0, 0, 0);
+
+$outer_vbox->pack_start($header, 0, 0, 0);
+
+# Separator
+$outer_vbox->pack_start(Gtk3::Separator->new('horizontal'), 0, 0, 0);
+
+# ---- Search Box ----
+my $search_box = Gtk3::Box->new('horizontal', 8);
+$search_box->set_border_width(10);
+
+my $search_entry = Gtk3::SearchEntry->new();
+$search_entry->set_placeholder_text('Filter Tags …');
+$search_entry->set_hexpand(1);
+$search_box->pack_start($search_entry, 1, 1, 0);
+
+my $btn_select_all   = Gtk3::Button->new_with_label('Mark All');
+my $btn_deselect_all = Gtk3::Button->new_with_label('Deselect All');
+$search_box->pack_start($btn_select_all,   0, 0, 0);
+$search_box->pack_start($btn_deselect_all, 0, 0, 0);
+
+$outer_vbox->pack_start($search_box, 0, 0, 0);
+
+# ---- Scrollbarer Bereich mit Checkboxen ----
+my $scrolled = Gtk3::ScrolledWindow->new(undef, undef);
+$scrolled->set_policy('never', 'automatic');
+$scrolled->set_vexpand(1);
+$outer_vbox->pack_start($scrolled, 1, 1, 0);
+
+my $main_vbox = Gtk3::Box->new('vertical', 0);
+$main_vbox->set_border_width(10);
+$scrolled->add($main_vbox);
+
+# Create Groups and Checkboxes
+sub update_status {
+    my $count = scalar keys %selected_tags;
+    $status_label->set_text("$count Tag(s) ausgew\x{e4}hlt");
+}
+
+for my $group (@GROUP_ORDER) {
+    next unless exists $TAG_GROUPS{$group};
+
+    # Group Headers
+    my $group_label = Gtk3::Label->new("<b>$group</b>");
+    my $group_label_unicode = decode('UTF-8', $group_label);
+    $group_label->set_use_markup(1);
+    $group_label->set_halign('start');
+    $group_label->set_margin_top(14);
+    $group_label->set_margin_bottom(4);
+    $main_vbox->pack_start($group_label, 0, 0, 0);
+
+    # Trennlinie unter Überschrift
+    $main_vbox->pack_start(Gtk3::Separator->new('horizontal'), 0, 0, 0);
+
+    # Checkboxes in a Grid (3 Colums)
+    my $grid = Gtk3::Grid->new();
+    $grid->set_column_spacing(16);
+    $grid->set_row_spacing(2);
+    $grid->set_margin_top(4);
+    $main_vbox->pack_start($grid, 0, 0, 0);
+
+    my $col = 0;
+    my $row = 0;
+    for my $tag (sort @{ $TAG_GROUPS{$group} }) {
+        my $cb = Gtk3::CheckButton->new_with_label($tag);
+        $cb->set_active(1) if $selected_tags{$tag};
+        $cb->set_hexpand(1);
+
+        $cb->signal_connect(toggled => sub {
+            if ($cb->get_active) {
+                $selected_tags{$tag} = 1;
+            } else {
+                delete $selected_tags{$tag};
+            }
+            update_status();
+        });
+
+        $grid->attach($cb, $col, $row, 1, 1);
+        $checkboxes{$tag} = $cb;
+
+        $col++;
+        if ($col >= 3) { $col = 0; $row++; }
+    }
+}
+
+update_status();
+
+# ---- Footer with Buttons ----
+$outer_vbox->pack_start(Gtk3::Separator->new('horizontal'), 0, 0, 0);
+
+my $footer = Gtk3::Box->new('horizontal', 10);
+$footer->set_border_width(12);
+
+my $info_label = Gtk3::Label->new('');
+$info_label->set_markup(u8('<span size="10240">Konfiguration: ' . $CONFIG_FILE . '</span>'));
+$info_label->set_halign('start');
+$info_label->set_ellipsize('start');
+$footer->pack_start($info_label, 1, 1, 0);
+
+my $btn_save = Gtk3::Button->new_with_label('Auswahl speichern');
+$btn_save->get_style_context->add_class('suggested-action');
+
+my $btn_quit = Gtk3::Button->new_with_label('Beenden');
+
+$footer->pack_end($btn_quit, 0, 0, 0);
+$footer->pack_end($btn_save, 0, 0, 0);
+$outer_vbox->pack_start($footer, 0, 0, 0);
+
+# ---- Signal-Handler ----
+
+# Search / Filter
+$search_entry->signal_connect('search-changed' => sub {
+    my $term = lc($search_entry->get_text());
+    for my $tag (keys %checkboxes) {
+        my $cb = $checkboxes{$tag};
+        if ($term eq '' || index(lc($tag), $term) >= 0) {
+            $cb->show();
+        } else {
+            $cb->hide();
+        }
+    }
+});
+
+# Select all visible
+$btn_select_all->signal_connect(clicked => sub {
+    for my $tag (keys %checkboxes) {
+        my $cb = $checkboxes{$tag};
+        next unless $cb->is_visible;
+        $cb->set_active(1);
+        $selected_tags{$tag} = 1;
+    }
+    update_status();
+});
+
+# Unselect all visible
+$btn_deselect_all->signal_connect(clicked => sub {
+    for my $tag (keys %checkboxes) {
+        my $cb = $checkboxes{$tag};
+        next unless $cb->is_visible;
+        $cb->set_active(0);
+        delete $selected_tags{$tag};
+    }
+    update_status();
+});
+
+# Save
+$btn_save->signal_connect(clicked => sub {
+    my $count = save_config(\%selected_tags);
+
+    my $dialog = Gtk3::MessageDialog->new(
+        $window,
+        'destroy-with-parent',
+        'info',
+        'ok',
+        "$count Tag(s) wurden in der Konfiguration gespeichert."
+    );
+    $dialog->set_title('Gespeichert');
+    $dialog->run;
+    $dialog->destroy;
+});
+
+# Quit
+$btn_quit->signal_connect(clicked => sub { Gtk3->main_quit });
+
+# ------------------------------------------------------------------ #
+#  Starten                                                             #
+# ------------------------------------------------------------------ #
+$window->show_all;
+Gtk3->main;
