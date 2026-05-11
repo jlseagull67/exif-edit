@@ -1,7 +1,6 @@
 #!/usr/bin/perl -w
 
 use strict;
-use warnings;
 use Encode qw(decode);
 use POSIX qw/floor/;
 use Gtk3 -init;
@@ -464,6 +463,9 @@ sub open_about_window {
 
     my $about_txt = <<'END_about';
 * This program writes comments to images as an EXIF 'Comment' tag.
+
+For more Documentation see:
+https://github.com/jlseagull67/exif-edit/blob/main/exif_edit
 
 Disclaimer:
 
