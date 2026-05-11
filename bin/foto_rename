@@ -2,5 +2,5 @@
 
 chmod 660 *
 #exiv2 --verbose  rename *
-exiv2 --Force -r'%Y%m%d_%H%M%S_%n' rename *
+exiv2 --Force -r'%Y%m%d_%H%M%S' rename *
 
