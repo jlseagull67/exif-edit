@@ -1,13 +1,19 @@
 #!/usr/bin/perl -w
 
 use strict;
-use warnings;
-use Encode qw(decode);
-use POSIX qw/floor/;
-use Gtk3 -init;
-use Glib 'TRUE', 'FALSE';
+use Encode     qw(decode);
+use POSIX      qw(floor);
+use Gtk3       -init;
+use Glib       'TRUE', 'FALSE';
 use File::Basename;
+use Cwd        qw(abs_path);
 use Image::ExifTool;
+
+# Module im gleichen Verzeichnis wie dieses Skript finden
+use lib dirname(abs_path($0));
+use ExifTagSelector qw(show_tag_selector load_config);
+use ExifManual      qw(show_manual);
+use ExifAbout       qw(show_about);
 
 #################################################################################
 # CSS
@@ -17,19 +23,16 @@ my $css_styles = <<'END_CSS';
 .thumbnail {
     padding: 5px 5px 5px 5px;
 }
-/* Focus frame around thumbnail */
 .thumbnail-focused {
     border: 1px solid lightgreen;
     border-radius: 5px;
     margin:  5px 5px 5px 5px;
 }
-/* Horizontal separator between Exif-Header and Exif-Panel */
 .exif-separator {
     color: #cccccc;
     background-color: #cccccc;
     min-height: 1px;
 }
-/* Vertical separator between Fotos and Exif-Panel */
 paned separator {
     color: #cccccc;
     background-color: #cccccc;
@@ -73,34 +76,29 @@ Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, Gtk3::STYLE_
 my @imageeventboxes = ();
 
 #################################################################################
-# EXIF-Tags Positivliste (exakter Match, kein Substring)
+# Config laden (Tags + Settings)
 #################################################################################
-my @WANTED_TAGS = qw(
-    FileName
-    Comment
-    FileSize
-    Model
-    LensType
-    FocalLength35efl
-    LensModel
-    FocusDistance
-    ImageSize
-    ImageStabilization
-    CreateDate
-    Aperture
-    ShutterSpeed
-    DateTimeOriginal
-    ISO
-    RollAngle
-    Rotation
-    Orientation
+my ($cfg_tags, $cfg_settings) = load_config();
+
+my $cmd_left    = $cfg_settings->{action_left_mousebutton}   || 'chromium';
+my $cmd_right   = $cfg_settings->{action_right_mousebutton}  || 'gimp';
+my $comment_tag = $cfg_settings->{name_of_exif_edit_comment} || 'Comment';
+
+#################################################################################
+# EXIF-Tags Positivliste – aus Config, Fallback auf eingebaute Liste
+#################################################################################
+my @WANTED_TAGS_DEFAULT = qw(
+    FileName Comment FileSize Model LensType FocalLength35efl LensModel
+    FocusDistance ImageSize ImageStabilization CreateDate Aperture
+    ShutterSpeed DateTimeOriginal ISO RollAngle Rotation Orientation
 );
-my %WANTED = map { $_ => 1 } @WANTED_TAGS;
+my @WANTED_TAGS = keys %$cfg_tags ? sort keys %$cfg_tags : @WANTED_TAGS_DEFAULT;
+my %WANTED      = map { $_ => 1 } @WANTED_TAGS;
 
 #################################################################################
 # Global vars
 #################################################################################
-my $numofcolls       = 6;
+my $numofcolls        = 6;
 my $show_exif_details = 0;
 
 #################################################################################
@@ -111,10 +109,9 @@ $window->set_default_size(1600, 600);
 $window->signal_connect(destroy => sub { Gtk3->main_quit });
 
 my $monitor_width = Gtk3::Gdk::Display::get_default()
-                  ->get_primary_monitor()
-                  ->get_geometry()->{width};
-my $thumbsize = floor(($monitor_width / $numofcolls) - 5 * ($numofcolls + 2) - 55);
-my $exifpanelsize = int($monitor_width * 0.125);   # 1/8 der Monitorbreite
+                  ->get_primary_monitor()->get_geometry()->{width};
+my $thumbsize     = floor(($monitor_width / $numofcolls) - 5 * ($numofcolls + 2) - 55);
+my $exifpanelsize = int($monitor_width * 0.125);
 
 print "monitor_width $monitor_width\n";
 print "thumbsize $thumbsize\n";
@@ -125,14 +122,15 @@ $window->add($vbox_main);
 $window->maximize();
 
 #################################################################################
-# Menü
+# Menue
 #################################################################################
 my $accel_group = Gtk3::AccelGroup->new();
 $window->add_accel_group($accel_group);
 my $menubar = Gtk3::MenuBar->new();
 
-my $menu_item_datei = Gtk3::MenuItem->new_with_label("File");
+# File
 my $menu_datei      = Gtk3::Menu->new();
+my $menu_item_datei = Gtk3::MenuItem->new_with_label("File");
 $menu_item_datei->set_submenu($menu_datei);
 
 my $menu_item_reload = Gtk3::MenuItem->new_with_label("Reload");
@@ -151,29 +149,40 @@ $menu_item_quit->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_q, ['c
 $menu_datei->append($menu_item_quit);
 $menubar->append($menu_item_datei);
 
+# Settings
+my $menu_settings      = Gtk3::Menu->new();
+my $menu_item_settings = Gtk3::MenuItem->new_with_label("Settings");
+$menu_item_settings->set_submenu($menu_settings);
+
+my $menu_item_tag_selector = Gtk3::MenuItem->new_with_label("Tag Selector");
+$menu_item_tag_selector->signal_connect(activate => sub { show_tag_selector($window) });
+$menu_item_tag_selector->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_t, ['control-mask'], 'visible');
+$menu_settings->append($menu_item_tag_selector);
+$menubar->append($menu_item_settings);
+
+# ?
 my $menu_help      = Gtk3::Menu->new();
 my $menu_item_help = Gtk3::MenuItem->new_with_label("?");
 $menu_item_help->set_submenu($menu_help);
 
 my $menu_item_manual = Gtk3::MenuItem->new_with_label("Manual");
-$menu_item_manual->signal_connect(activate => \&open_manual_window);
+$menu_item_manual->signal_connect(activate => sub { show_manual($window) });
 $menu_item_manual->add_accelerator("activate", $accel_group, Gtk3::Gdk::KEY_h, ['control-mask'], 'visible');
 $menu_help->append($menu_item_manual);
 
 my $menu_item_about = Gtk3::MenuItem->new_with_label("About exif_edit");
-$menu_item_about->signal_connect(activate => \&open_about_window);
+$menu_item_about->signal_connect(activate => sub { show_about($window) });
 $menu_help->append($menu_item_about);
 $menubar->append($menu_item_help);
 
 $vbox_main->pack_start($menubar, FALSE, FALSE, 0);
 
 #################################################################################
-# Haupt-Bereich: HPaned  (links Fotos | rechts EXIF-Panel)
+# Haupt-Bereich: HPaned
 #################################################################################
 my $hpaned = Gtk3::Paned->new('horizontal');
 $vbox_main->pack_start($hpaned, TRUE, TRUE, 0);
 
-# ── Linke Seite: Scrollbarer Foto-Bereich ────────────────────────────────────
 my $scroll = Gtk3::ScrolledWindow->new();
 $scroll->set_policy('automatic', 'automatic');
 $hpaned->pack1($scroll, TRUE, TRUE);
@@ -181,24 +190,20 @@ $hpaned->pack1($scroll, TRUE, TRUE);
 my $vbox_images = Gtk3::Box->new('vertical', 10);
 $scroll->add($vbox_images);
 
-# ── Rechte Seite: EXIF-Panel ─────────────────────────────────────────────────
 my $exif_panel = Gtk3::Box->new('vertical', 0);
 $exif_panel->get_style_context->add_class('exif-panel');
 $exif_panel->set_size_request($exifpanelsize, -1);
 $hpaned->pack2($exif_panel, FALSE, FALSE);
 
-# Titel-Label im EXIF-Panel
 my $exif_title = Gtk3::Label->new('EXIF');
 $exif_title->get_style_context->add_class('exif-title');
 $exif_title->set_halign('start');
 $exif_panel->pack_start($exif_title, FALSE, FALSE, 0);
 
-# Separator
 my $sep = Gtk3::Separator->new('horizontal');
 $sep->get_style_context->add_class('exif-separator');
 $exif_panel->pack_start($sep, FALSE, FALSE, 0);
 
-# TreeView für EXIF-Daten
 my $exif_store = Gtk3::ListStore->new('Glib::String', 'Glib::String');
 my $exif_view  = Gtk3::TreeView->new_with_model($exif_store);
 $exif_view->set_headers_visible(TRUE);
@@ -219,14 +224,13 @@ $exif_scroll->set_policy('automatic', 'automatic');
 $exif_scroll->add($exif_view);
 $exif_panel->pack_start($exif_scroll, TRUE, TRUE, 0);
 
-# Trennlinie setzen nachdem das Fenster gemalt wurde
 $window->signal_connect('realize' => sub {
     my $total = $window->get_allocated_width();
-    $hpaned->set_position($total - $exifpanelsize - 6);  # 6px für den Divider itselves
+    $hpaned->set_position($total - $exifpanelsize - 6);
 });
 
 #################################################################################
-# EXIF-Panel befüllen
+# EXIF-Panel befuellen
 #################################################################################
 sub update_exif_panel {
     my ($filepath) = @_;
@@ -234,16 +238,11 @@ sub update_exif_panel {
 
     my $basename = basename($filepath);
     $exif_title->set_markup(
-        '<span foreground="#cccccc" font="12" weight="bold">  EXIF: '
-        . $basename . '</span>'
+        '<span foreground="#cccccc" font="12" weight="bold">  EXIF: ' . $basename . '</span>'
     );
 
     my $et = Image::ExifTool->new;
-    $et->Options(DateFormat => '%Y-%m-%d %H:%M:%S',
-                 Duplicates => 0,
-                 RequestAll => 1,    # <-- NEU: fordert auch "versteckte" Tags wie Comment an
-                 Group      => 0,    # <-- NEU: Schlüssel ohne Gruppen-Präfix (kein "File:Comment")
-                );
+    $et->Options(DateFormat => '%Y-%m-%d %H:%M:%S', Duplicates => 0, RequestAll => 1, Group => 0);
     my $info = $et->ImageInfo($filepath, \@WANTED_TAGS);
 
     my %seen;
@@ -257,7 +256,6 @@ sub update_exif_panel {
         $exif_store->set($exif_store->append, 0, $bare, 1, "$val");
     }
 
-    # Fallback: Tags mit Gruppenpräfix
     if (!$exif_store->iter_n_children(undef)) {
         my $info2 = $et->ImageInfo($filepath);
         for my $raw (sort keys %$info2) {
@@ -288,16 +286,12 @@ sub set_focus_on {
 # Todel
 #################################################################################
 sub todel_images {
-    my @images = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
+    my @images   = glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     my $exifTool = Image::ExifTool->new();
-
     if (! -d 'todel') { `mkdir todel` }
-
     foreach my $file (@images) {
-        my $comment = $exifTool->ImageInfo($file)->{"Comment"} // "";
-        if ($comment eq 'todel') {
-            `mv $file todel/`;
-        }
+        my $comment = $exifTool->ImageInfo($file)->{$comment_tag} // "";
+        if ($comment eq 'todel') { `mv $file todel/`; }
     }
     &load_images;
 }
@@ -317,23 +311,17 @@ $vbox_images->foreach(\&remove_widget);
 sub load_images {
     $vbox_images->foreach(\&remove_widget);
     @imageeventboxes = ();
-
-    # EXIF-Panel zurücksetzen
     $exif_store->clear;
     $exif_title->set_markup('<span foreground="#cccccc" font="12" weight="bold">  EXIF</span>');
 
-    my @images = sort glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
+    my @images    = sort glob("*.JPG *.jpg *.png *.PNG *.jpeg *.JPEG");
     my $actfolder = `pwd`;
     $actfolder =~ s/\n//;
-    my $num_picts = scalar @images;
-    $window->set_title("exif_edit - $actfolder ($num_picts)");
+    $window->set_title("exif_edit - $actfolder (" . scalar(@images) . ")");
 
-    my $row;
-    my $i = 0;
+    my ($row, $i) = (undef, 0);
 
     foreach my $file (@images) {
-
-        ## Thumbnail
         my $pixbuf = Gtk3::Gdk::Pixbuf->new_from_file_at_scale($file, $thumbsize, $thumbsize, TRUE);
         my $image  = Gtk3::Image->new_from_pixbuf($pixbuf);
         $image->get_style_context->add_class('thumbnail');
@@ -342,50 +330,39 @@ sub load_images {
         $imageeventbox->add($image);
         $imageeventbox->add_events(['button-press-mask']);
 
-        # Closure über $file für den EventBox-Handler
         my $captured_file = $file;
         $imageeventbox->signal_connect(button_press_event => sub {
             my ($widget, $event) = @_;
-            if ($event->button == 1) {
-                system("/bin/sh", "-c", "chromium \"$captured_file\" &");
-            } elsif ($event->button == 3) {
-                system("gimp \"$captured_file\" &");
-            }
-            # Fokus setzen UND EXIF-Panel aktualisieren
+            if    ($event->button == 1) { system("/bin/sh", "-c", "$cmd_left \"$captured_file\" &"); }
+            elsif ($event->button == 3) { system("/bin/sh", "-c", "$cmd_right \"$captured_file\" &"); }
             set_focus_on($imageeventbox, $captured_file);
             return TRUE;
         });
-
         push(@imageeventboxes, $imageeventbox);
 
-        ## EXIF Comment
-        my $exifTool = Image::ExifTool->new;
+        my $exifTool        = Image::ExifTool->new;
         $exifTool->ExtractInfo($file);
-        my $comment         = $exifTool->GetValue('Comment', 'PrintConv') // '';
+        my $comment         = $exifTool->GetValue($comment_tag, 'PrintConv') // '';
         my $commententry    = Gtk3::Entry->new();
-        my $comment_unicode = decode('UTF-8', $comment);
-        $commententry->set_text($comment_unicode);
+        $commententry->set_text(decode('UTF-8', $comment));
         $commententry->signal_connect(focus_out_event => sub {
-            my $new_comment = $commententry->get_text();
             my $tool = Image::ExifTool->new;
-            $tool->SetNewValue('Comment', $new_comment);
+            $tool->SetNewValue($comment_tag, $commententry->get_text());
             $tool->WriteInfo($file);
             return FALSE;
         });
 
-        ## Dateiname
         my $label         = Gtk3::Label->new($file);
         my $labeleventbox = Gtk3::EventBox->new();
         $labeleventbox->add($label);
         $labeleventbox->add_events(['button-press-mask']);
         $labeleventbox->signal_connect(button_press_event => sub {
             $commententry->set_text('todel');
-            $exifTool->SetNewValue('Comment', 'todel');
+            $exifTool->SetNewValue($comment_tag, 'todel');
             $exifTool->WriteInfo($file);
             return TRUE;
         });
 
-        ## Container
         my $vbox = Gtk3::Box->new('vertical', 5);
         $vbox->pack_start($imageeventbox,  FALSE, FALSE, 0);
         $vbox->pack_start($labeleventbox,  FALSE, FALSE, 0);
@@ -402,95 +379,9 @@ sub load_images {
     $vbox_images->show_all();
 }
 
+#################################################################################
+# Start
+#################################################################################
 load_images();
-
 $window->show_all();
 Gtk3->main();
-
-#################################################################################
-## Hilfe-Fenster
-#################################################################################
-sub open_manual_window {
-    my $top = Gtk3::Window->new('toplevel');
-    $top->set_title("Manual");
-    $top->set_default_size(400, 400);
-    $top->set_position('center');
-
-    my $manual_txt = <<'END_manual';
-This program writes comments to images as an EXIF 'Comment' tag whenever a text field is exited.
-
-* Clicking (with any mouse button) on the filename inserts the text 'todel' into the comment field.
-
-* Left-clicking on a thumbnail opens the image in the Chromium browser.
-
-* Right-clicking on a thumbnail opens the image in GIMP.
-
-* The menu contains the 'Reload' option, which does exactly that.
-
-* The 'To Del' option moves all images to a subdirectory named 'todel' (which is created if it doesn't already exist) and then reloads the thumbnails.
-
-END_manual
-
-    my $manual_txt_unicode = decode('UTF-8', $manual_txt);
-
-    my $vbox = Gtk3::Box->new('vertical', 5);
-    $vbox->set_border_width(10);
-    $top->add($vbox);
-
-    my $scrolled_win = Gtk3::ScrolledWindow->new;
-    $scrolled_win->set_policy('automatic', 'automatic');
-    my $textview = Gtk3::TextView->new;
-    $textview->set_editable(0);
-    $textview->set_cursor_visible(0);
-    $textview->set_wrap_mode('word');
-    $textview->get_buffer->set_text($manual_txt_unicode);
-    $scrolled_win->add($textview);
-    $vbox->pack_start($scrolled_win, TRUE, TRUE, 0);
-
-    my $close_button = Gtk3::Button->new("Close");
-    $close_button->signal_connect(clicked => sub { $top->destroy });
-    $vbox->pack_start($close_button, FALSE, FALSE, 0);
-    $top->show_all;
-}
-
-#################################################################################
-## About-Fenster
-#################################################################################
-sub open_about_window {
-    my $top = Gtk3::Window->new('toplevel');
-    $top->set_title("About exif_edit");
-    $top->set_default_size(400, 300);
-    $top->set_position('center');
-
-    my $about_txt = <<'END_about';
-* This program writes comments to images as an EXIF 'Comment' tag.
-
-Disclaimer:
-
-This program is provided 'as is.' It may be freely modified or redistributed under the same terms as Perl itself.
-
-Programmer: Jörg Albrecht
-
-END_about
-
-    my $about_txt_unicode = decode('UTF-8', $about_txt);
-
-    my $vbox = Gtk3::Box->new('vertical', 5);
-    $vbox->set_border_width(10);
-    $top->add($vbox);
-
-    my $scrolled_win = Gtk3::ScrolledWindow->new;
-    $scrolled_win->set_policy('automatic', 'automatic');
-    my $textview = Gtk3::TextView->new;
-    $textview->set_editable(0);
-    $textview->set_cursor_visible(0);
-    $textview->set_wrap_mode('word');
-    $textview->get_buffer->set_text($about_txt_unicode);
-    $scrolled_win->add($textview);
-    $vbox->pack_start($scrolled_win, TRUE, TRUE, 0);
-
-    my $close_button = Gtk3::Button->new("Close");
-    $close_button->signal_connect(clicked => sub { $top->destroy });
-    $vbox->pack_start($close_button, FALSE, FALSE, 0);
-    $top->show_all;
-}
