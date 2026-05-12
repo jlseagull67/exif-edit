@@ -13,7 +13,7 @@ A lightweight GTK3-based image browser for Linux that lets you view thumbnails a
 - **EXIF details panel** — click any image to see a curated set of EXIF tags (camera model, lens, focal length, aperture, shutter speed, ISO, date, orientation, and more) in a sidebar
 - **Quick "mark for deletion"** — click a filename label to instantly tag the image with `todel` in its EXIF comment
 - **Batch move** — the "To Del" menu action moves all `todel`-tagged images into a `todel/` subdirectory and reloads the view
-- **Open in external apps** — left-click a thumbnail to open it in Chromium; right-click to open it in GIMP
+- **Open in external apps** — left-click a thumbnail to open it in Chromium (or prefered image viewer - see Settings section); right-click to open it in GIMP (or prefered image editor - see Settings section)
 - **Keyboard shortcuts** — `Ctrl+R` reload, `Ctrl+D` move-to-del, `Ctrl+Q` quit, `Ctrl+H` manual
 
 ---
