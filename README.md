@@ -20,7 +20,9 @@ A lightweight GTK3-based image browser for Linux that lets you view thumbnails a
 
 ## Screenshots
 
-> Run `exif_edit` in a directory containing images to see the thumbnail grid with the EXIF panel on the right.
+<img width="2478" height="1443" alt="Bildschirmfoto von 2026-05-12 06 27 16" src="https://github.com/user-attachments/assets/a98a562d-661a-4feb-9d8b-4d34bf519e73" />
+
+
 
 ---
 
@@ -33,8 +35,8 @@ A lightweight GTK3-based image browser for Linux that lets you view thumbnails a
 - [Encode](https://metacpan.org/pod/Encode) (core module)
 - [POSIX](https://metacpan.org/pod/POSIX) (core module)
 - [File::Basename](https://metacpan.org/pod/File::Basename) (core module)
-- Chromium (for left-click image preview)
-- GIMP (for right-click image editing)
+- Chromium (or your prefered Image preview Tool for left-click image preview - see Settings-Section)
+- GIMP (or your prefered Image editing Toll for right-click image editing - see Settings-Section)
 
 ### Installing Perl dependencies
 
@@ -103,9 +105,17 @@ This is non-destructive: the images are moved, not deleted.
 
 ## Supported EXIF tags (sidebar)
 
-`FileName` · `Comment` · `FileSize` · `Model` · `LensType` · `FocalLength35efl` · `LensModel` · `FocusDistance` · `ImageSize` · `ImageStabilization` · `CreateDate` · `Aperture` · `ShutterSpeed` · `DateTimeOriginal` · `ISO` · `RollAngle` · `Rotation` · `Orientation`
+You can choose from all existing tags using the settings menu:
+
+<img width="751" height="1054" alt="Bildschirmfoto von 2026-05-12 06 43 34" src="https://github.com/user-attachments/assets/16445f20-b1c7-4ffd-9351-7012dbb33422" />
+
+(Scroll down for thousands of tags or simply use the Filter funktion)
 
 ---
+
+## Settings
+
+Choose from Settings -> Tag Selector to customize the EXIF tags sidebar or even the behavior of the left or right mouse click by setting your prefered image viewing and editing tool or the prefered Exif-Tag that exif_edit creates for your comments (mine is simply Comment).
 
 ## License
 
