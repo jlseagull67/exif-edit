@@ -1,0 +1,933 @@
+#!/usr/bin/env perl
+#
+# exif_browser.pl  -  GTK3-Anwendung zum Durchsuchen von EXIF-Daten
+#                   und Anzeigen von Foto-Thumbnails
+#
+# Verwendung:
+#   perl exif_browser.pl [--db <datei>]
+#
+
+use strict;
+use warnings;
+use utf8;
+
+use Gtk3 '-init';
+use Glib qw(TRUE FALSE);
+use Glib::Object::Introspection;
+use DBI;
+use File::Basename qw(basename dirname);
+use POSIX qw(floor);
+use Getopt::Long qw(GetOptions);
+use Scalar::Util qw(looks_like_number);
+
+binmode STDOUT, ':utf8';
+binmode STDERR, ':utf8';
+
+# GdkPixbuf via Introspection laden
+Glib::Object::Introspection->setup(
+    basename => 'GdkPixbuf',
+    version  => '2.0',
+    package  => 'GdkPixbuf',
+);
+
+# ─── Konfiguration ────────────────────────────────────────────────────────────
+my $DB_FILE      = 'exif_data.db';
+my $THUMB_SIZE   = 160;
+my $APP_TITLE    = 'EXIF Foto-Browser';
+my $APP_VERSION  = '1.0';
+
+GetOptions('db=s' => \$DB_FILE) or die "Fehler in Argumenten\n";
+
+unless (-f $DB_FILE) {
+    show_startup_error(
+        "Datenbank nicht gefunden: $DB_FILE\n\n" .
+        "Bitte zuerst exif2sqlite.pl ausführen:\n" .
+        "  perl exif2sqlite.pl --db $DB_FILE /pfad/zu/fotos"
+    );
+    exit 1;
+}
+
+# ─── Globaler Zustand ─────────────────────────────────────────────────────────
+my $dbh;
+my @current_results   = ();   # Aktuelle Suchergebnisse (photo_ids)
+my $selected_photo_id = undef;
+my $thumb_size        = $THUMB_SIZE;
+my %thumb_cache       = ();   # photo_id => GdkPixbuf
+my %widget_data       = ();   # widget_ref => { photo_id, photo_path }
+my $search_idle_id    = undef;
+
+# ─── Datenbankverbindung ──────────────────────────────────────────────────────
+eval {
+    $dbh = DBI->connect(
+        "dbi:SQLite:dbname=$DB_FILE",
+        '', '',
+        { RaiseError => 1, AutoCommit => 1, sqlite_unicode => 1, PrintError => 0 }
+    );
+    $dbh->do("PRAGMA journal_mode = WAL");
+    $dbh->do("PRAGMA cache_size   = 5000");
+};
+if ($@) {
+    show_startup_error("Datenbankfehler: $@");
+    exit 1;
+}
+
+# ─── CSS-Styling ──────────────────────────────────────────────────────────────
+my $css = Gtk3::CssProvider->new;
+$css->load_from_data(<<'CSS');
+/* Hauptfenster */
+window {
+    background-color: #1e1e2e;
+}
+
+/* Header / Suchleiste */
+.search-bar {
+    background-color: #2a2a3e;
+    border-bottom: 1px solid #44475a;
+    padding: 8px;
+}
+
+.search-label {
+    color: #cdd6f4;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+/* Tag-Auswahl ComboBox */
+.tag-combo {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #44475a;
+    border-radius: 4px;
+}
+
+/* Suchfeld */
+.search-entry {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #44475a;
+    border-radius: 4px;
+    caret-color: #cba6f7;
+}
+.search-entry:focus {
+    border-color: #cba6f7;
+    box-shadow: 0 0 0 2px rgba(203,166,247,0.3);
+}
+
+/* Thumbnail-Bereich */
+.thumb-scroll {
+    background-color: #181825;
+}
+
+.thumb-flowbox {
+    background-color: #181825;
+    padding: 12px;
+}
+
+/* Einzelnes Thumbnail-Widget */
+.thumb-frame {
+    background-color: #2a2a3e;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    padding: 6px;
+    margin: 4px;
+    transition: border-color 200ms;
+}
+.thumb-frame:hover {
+    border-color: #6c7086;
+    background-color: #313244;
+}
+.thumb-frame.selected {
+    border-color: #cba6f7;
+    background-color: #313244;
+}
+
+.thumb-label {
+    color: #a6adc8;
+    font-size: 10px;
+    margin-top: 4px;
+}
+
+/* Detail-Panel */
+.detail-panel {
+    background-color: #2a2a3e;
+    border-left: 1px solid #44475a;
+}
+
+.detail-header {
+    background-color: #313244;
+    border-bottom: 1px solid #44475a;
+    padding: 10px;
+}
+
+.detail-title {
+    color: #cdd6f4;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.detail-path {
+    color: #7f849c;
+    font-size: 10px;
+}
+
+/* Tag-Liste im Detail */
+.tag-tree {
+    background-color: #2a2a3e;
+    color: #cdd6f4;
+    font-size: 11px;
+}
+
+/* Statusleiste */
+.statusbar {
+    background-color: #2a2a3e;
+    border-top: 1px solid #44475a;
+    padding: 2px 8px;
+    font-size: 10px;
+    color: #7f849c;
+}
+
+/* Such-Buttons */
+button.search-btn {
+    background-color: #cba6f7;
+    color: #1e1e2e;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 4px 12px;
+}
+button.search-btn:hover {
+    background-color: #d0b0ff;
+}
+
+button.reset-btn {
+    background-color: #45475a;
+    color: #cdd6f4;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+}
+button.reset-btn:hover {
+    background-color: #585b70;
+}
+
+/* Slider-Beschriftung */
+.slider-label {
+    color: #7f849c;
+    font-size: 10px;
+}
+
+/* Trennlinie */
+separator {
+    background-color: #44475a;
+    min-height: 1px;
+}
+
+/* Keine Ergebnisse */
+.empty-label {
+    color: #45475a;
+    font-size: 16px;
+    font-weight: bold;
+    margin: 40px;
+}
+
+/* Großbild-Viewer */
+.viewer-bg {
+    background-color: #11111b;
+}
+
+/* FlowBoxChild Hintergrund transparent */
+flowboxchild {
+    background-color: transparent;
+    padding: 0;
+    margin: 0;
+}
+flowboxchild:selected {
+    background-color: transparent;
+}
+CSS
+
+my $screen   = Gtk3::Gdk::Screen::get_default();
+my $priority = Gtk3::STYLE_PROVIDER_PRIORITY_APPLICATION();
+Gtk3::StyleContext::add_provider_for_screen($screen, $css, $priority);
+
+# ─── Hauptfenster ─────────────────────────────────────────────────────────────
+my $window = Gtk3::Window->new('toplevel');
+$window->set_title($APP_TITLE);
+$window->set_default_size(1280, 780);
+$window->set_position('center');
+$window->signal_connect(destroy => sub { $dbh->disconnect if $dbh; Gtk3->main_quit });
+
+# ─── Haupt-Layout: Vertikal (Suchleiste + Inhalt + Statusleiste) ──────────────
+my $vbox_main = Gtk3::Box->new('vertical', 0);
+$window->add($vbox_main);
+
+# ── Suchleiste ────────────────────────────────────────────────────────────────
+my $search_bar = Gtk3::Box->new('horizontal', 8);
+$search_bar->get_style_context->add_class('search-bar');
+$search_bar->set_border_width(8);
+$vbox_main->pack_start($search_bar, FALSE, FALSE, 0);
+
+# App-Titel
+my $title_label = Gtk3::Label->new("🔍 $APP_TITLE");
+$title_label->get_style_context->add_class('detail-title');
+$search_bar->pack_start($title_label, FALSE, FALSE, 4);
+
+my $sep1 = Gtk3::Separator->new('vertical');
+$search_bar->pack_start($sep1, FALSE, FALSE, 4);
+
+# Label: Tag
+my $lbl_tag = Gtk3::Label->new("EXIF-Tag:");
+$lbl_tag->get_style_context->add_class('search-label');
+$search_bar->pack_start($lbl_tag, FALSE, FALSE, 0);
+
+# ComboBoxText für Tag-Auswahl
+my $combo_tag = Gtk3::ComboBoxText->new_with_entry;
+$combo_tag->get_style_context->add_class('tag-combo');
+$combo_tag->set_size_request(220, -1);
+$combo_tag->set_tooltip_text("EXIF-Tag auswählen oder eingeben");
+populate_tag_combo($combo_tag);
+$search_bar->pack_start($combo_tag, FALSE, FALSE, 0);
+
+# Label: Wert
+my $lbl_val = Gtk3::Label->new("Wert (enthält):");
+$lbl_val->get_style_context->add_class('search-label');
+$search_bar->pack_start($lbl_val, FALSE, FALSE, 4);
+
+# Suchfeld für Wert
+my $entry_value = Gtk3::SearchEntry->new;
+$entry_value->get_style_context->add_class('search-entry');
+$entry_value->set_size_request(260, -1);
+$entry_value->set_placeholder_text("z. B. Canon, 2024, iPhone...");
+$search_bar->pack_start($entry_value, FALSE, FALSE, 0);
+
+# Such-Button
+my $btn_search = Gtk3::Button->new_with_label("  Suchen  ");
+$btn_search->get_style_context->add_class('search-btn');
+$search_bar->pack_start($btn_search, FALSE, FALSE, 0);
+
+# Reset-Button
+my $btn_reset = Gtk3::Button->new_with_label("Alle anzeigen");
+$btn_reset->get_style_context->add_class('reset-btn');
+$search_bar->pack_start($btn_reset, FALSE, FALSE, 0);
+
+# Spacer
+$search_bar->pack_start(Gtk3::Box->new('horizontal',0), TRUE, TRUE, 0);
+
+# Thumbnail-Größe Slider
+my $lbl_size = Gtk3::Label->new("Größe:");
+$lbl_size->get_style_context->add_class('slider-label');
+$search_bar->pack_start($lbl_size, FALSE, FALSE, 0);
+
+my $size_adj = Gtk3::Adjustment->new($thumb_size, 80, 300, 10, 20, 0);
+my $slider   = Gtk3::Scale->new('horizontal', $size_adj);
+$slider->set_draw_value(FALSE);
+$slider->set_size_request(120, -1);
+$slider->set_tooltip_text("Thumbnail-Größe anpassen");
+$search_bar->pack_start($slider, FALSE, FALSE, 0);
+
+my $lbl_size_val = Gtk3::Label->new("${thumb_size}px");
+$lbl_size_val->get_style_context->add_class('slider-label');
+$lbl_size_val->set_width_chars(5);
+$search_bar->pack_start($lbl_size_val, FALSE, FALSE, 0);
+
+# ── Haupt-Inhaltsbereich: Horizontal (Thumbnails + Detail-Panel) ──────────────
+my $paned = Gtk3::Paned->new('horizontal');
+$paned->set_position(870);
+$vbox_main->pack_start($paned, TRUE, TRUE, 0);
+
+# ── Linke Seite: Thumbnail-Gitter ─────────────────────────────────────────────
+my $left_box = Gtk3::Box->new('vertical', 0);
+$paned->pack1($left_box, TRUE, FALSE);
+
+# Ergebnis-Info-Leiste
+my $result_bar = Gtk3::Box->new('horizontal', 8);
+$result_bar->get_style_context->add_class('search-bar');
+$result_bar->set_border_width(4);
+$left_box->pack_start($result_bar, FALSE, FALSE, 0);
+
+my $lbl_results = Gtk3::Label->new("Alle Fotos");
+$lbl_results->get_style_context->add_class('search-label');
+$lbl_results->set_xalign(0.0);
+$result_bar->pack_start($lbl_results, TRUE, TRUE, 4);
+
+my $spinner = Gtk3::Spinner->new;
+$result_bar->pack_end($spinner, FALSE, FALSE, 4);
+
+# Scrollbares FlowBox
+my $scroll = Gtk3::ScrolledWindow->new;
+$scroll->get_style_context->add_class('thumb-scroll');
+$scroll->set_policy('automatic', 'automatic');
+$scroll->set_shadow_type('none');
+$left_box->pack_start($scroll, TRUE, TRUE, 0);
+
+# Viewport + FlowBox
+my $flowbox = Gtk3::FlowBox->new;
+$flowbox->get_style_context->add_class('thumb-flowbox');
+$flowbox->set_homogeneous(TRUE);
+$flowbox->set_row_spacing(8);
+$flowbox->set_column_spacing(8);
+$flowbox->set_selection_mode('single');
+$flowbox->set_max_children_per_line(20);
+$scroll->add($flowbox);
+
+# ── Rechte Seite: Detail-Panel ────────────────────────────────────────────────
+my $detail_box = Gtk3::Box->new('vertical', 0);
+$detail_box->get_style_context->add_class('detail-panel');
+$detail_box->set_size_request(380, -1);
+$paned->pack2($detail_box, FALSE, FALSE);
+
+# Detail-Header
+my $detail_header = Gtk3::Box->new('vertical', 2);
+$detail_header->get_style_context->add_class('detail-header');
+$detail_header->set_border_width(10);
+$detail_box->pack_start($detail_header, FALSE, FALSE, 0);
+
+my $lbl_detail_title = Gtk3::Label->new("Kein Foto ausgewählt");
+$lbl_detail_title->get_style_context->add_class('detail-title');
+$lbl_detail_title->set_xalign(0.0);
+$lbl_detail_title->set_ellipsize('middle');
+$detail_header->pack_start($lbl_detail_title, FALSE, FALSE, 0);
+
+my $lbl_detail_path = Gtk3::Label->new("");
+$lbl_detail_path->get_style_context->add_class('detail-path');
+$lbl_detail_path->set_xalign(0.0);
+$lbl_detail_path->set_ellipsize('start');
+$lbl_detail_path->set_tooltip_text("");
+$detail_header->pack_start($lbl_detail_path, FALSE, FALSE, 0);
+
+# Großes Vorschaubild im Detail
+my $detail_image_frame = Gtk3::AspectFrame->new(undef, 0.5, 0.5, 1.0, FALSE);
+$detail_image_frame->set_shadow_type('none');
+$detail_image_frame->set_border_width(8);
+my $detail_image = Gtk3::Image->new;
+$detail_image->set_size_request(-1, 200);
+$detail_image_frame->add($detail_image);
+$detail_box->pack_start($detail_image_frame, FALSE, FALSE, 0);
+
+# Öffnen-Button
+my $btn_open = Gtk3::Button->new_with_label("🖼  Vollbild anzeigen");
+$btn_open->get_style_context->add_class('search-btn');
+$btn_open->set_border_width(8);
+$btn_open->set_sensitive(FALSE);
+$detail_box->pack_start($btn_open, FALSE, FALSE, 0);
+
+my $sep_detail = Gtk3::Separator->new('horizontal');
+$detail_box->pack_start($sep_detail, FALSE, FALSE, 4);
+
+# Suchfeld für Tag-Filter im Detail
+my $detail_filter_box = Gtk3::Box->new('horizontal', 4);
+$detail_filter_box->set_border_width(6);
+$detail_box->pack_start($detail_filter_box, FALSE, FALSE, 0);
+
+my $lbl_tag_filter = Gtk3::Label->new("Tag filtern:");
+$lbl_tag_filter->get_style_context->add_class('search-label');
+$detail_filter_box->pack_start($lbl_tag_filter, FALSE, FALSE, 0);
+
+my $entry_tag_filter = Gtk3::SearchEntry->new;
+$entry_tag_filter->get_style_context->add_class('search-entry');
+$entry_tag_filter->set_placeholder_text("z. B. GPS, Date, Camera...");
+$detail_filter_box->pack_start($entry_tag_filter, TRUE, TRUE, 0);
+
+# TreeView für EXIF-Tags
+my $tag_scroll = Gtk3::ScrolledWindow->new;
+$tag_scroll->set_policy('automatic', 'automatic');
+$tag_scroll->set_shadow_type('in');
+$tag_scroll->set_border_width(6);
+$detail_box->pack_start($tag_scroll, TRUE, TRUE, 0);
+
+my $tag_store = Gtk3::ListStore->new('Glib::String', 'Glib::String');
+my $tag_filter_model = Gtk3::TreeModelFilter->new($tag_store, undef);
+$tag_filter_model->set_visible_func(\&tag_filter_func);
+
+my $tag_tree = Gtk3::TreeView->new_with_model($tag_filter_model);
+$tag_tree->get_style_context->add_class('tag-tree');
+$tag_tree->set_headers_visible(TRUE);
+$tag_tree->set_search_column(0);
+$tag_tree->set_rubber_banding(TRUE);
+
+# Spalten
+my $col_tag = Gtk3::TreeViewColumn->new_with_attributes(
+    "Tag",
+    Gtk3::CellRendererText->new,
+    text => 0
+);
+$col_tag->set_resizable(TRUE);
+$col_tag->set_min_width(120);
+$col_tag->set_sort_column_id(0);
+
+my $renderer_val = Gtk3::CellRendererText->new;
+$renderer_val->set(ellipsize => 'end');
+my $col_val = Gtk3::TreeViewColumn->new_with_attributes(
+    "Wert",
+    $renderer_val,
+    text => 1
+);
+$col_val->set_resizable(TRUE);
+$col_val->set_expand(TRUE);
+
+$tag_tree->append_column($col_tag);
+$tag_tree->append_column($col_val);
+$tag_scroll->add($tag_tree);
+
+# Rechtsklick-Menü auf Tag → als Suchfilter übernehmen
+$tag_tree->signal_connect('button-press-event' => \&on_tag_tree_click);
+
+# ── Statusleiste ──────────────────────────────────────────────────────────────
+my $statusbar = Gtk3::Statusbar->new;
+$statusbar->get_style_context->add_class('statusbar');
+my $status_ctx = $statusbar->get_context_id('main');
+$vbox_main->pack_start($statusbar, FALSE, FALSE, 0);
+
+# ─── Signal-Handler ───────────────────────────────────────────────────────────
+
+# Suche starten
+$btn_search->signal_connect(clicked => \&do_search);
+$entry_value->signal_connect(activate => \&do_search);
+$combo_tag->signal_connect(changed => sub {
+    # Auto-Suche wenn Wert schon eingetragen
+    do_search() if ($entry_value->get_text // '') ne '';
+});
+
+# Reset
+$btn_reset->signal_connect(clicked => sub {
+    $combo_tag->set_active(-1);
+    $entry_value->set_text('');
+    load_all_photos();
+});
+
+# Thumbnail-Klick → Detail anzeigen
+$flowbox->signal_connect('child-activated' => \&on_thumb_activated);
+
+# Vollbild-Button
+$btn_open->signal_connect(clicked => sub {
+    open_fullscreen($selected_photo_id) if $selected_photo_id;
+});
+
+# Slider: Größe ändern
+$size_adj->signal_connect('value-changed' => sub {
+    $thumb_size = int($size_adj->get_value);
+    $lbl_size_val->set_text("${thumb_size}px");
+    %thumb_cache = ();  # Cache leeren bei Größenänderung
+    # Neu-Rendern mit Verzögerung
+    if ($search_idle_id) {
+        Glib::Source->remove($search_idle_id);
+    }
+    $search_idle_id = Glib::Timeout->add(300, sub {
+        refresh_thumbnails();
+        $search_idle_id = undef;
+        return FALSE;
+    });
+});
+
+# Tag-Filter im Detail-Panel
+$entry_tag_filter->signal_connect('search-changed' => sub {
+    $tag_filter_model->refilter;
+});
+
+# ─── Initialer Ladevorgang ────────────────────────────────────────────────────
+$window->show_all;
+status_set("Datenbank: $DB_FILE");
+load_all_photos();
+Gtk3->main;
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUBROUTINEN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Alle Fotos laden ──────────────────────────────────────────────────────────
+sub load_all_photos {
+    $spinner->start;
+    $spinner->show;
+    status_set("Lade alle Fotos...");
+    Gtk3::main_iteration() while Gtk3::events_pending();
+
+    my $rows = $dbh->selectall_arrayref(
+        "SELECT id, path, filename FROM photos ORDER BY filename",
+        { Slice => {} }
+    );
+    @current_results = @$rows;
+    my $n = scalar @current_results;
+    $lbl_results->set_text("$n Foto" . ($n == 1 ? '' : 's') . " in der Datenbank");
+
+    render_thumbnails();
+
+    $spinner->stop;
+    $spinner->hide;
+    status_set("$n Fotos geladen  -  Datenbank: $DB_FILE");
+}
+
+# ── Suche durchführen ─────────────────────────────────────────────────────────
+sub do_search {
+    my $tag   = $combo_tag->get_active_text // '';
+    my $value = $entry_value->get_text      // '';
+    $tag   =~ s/^\s+|\s+$//g;
+    $value =~ s/^\s+|\s+$//g;
+
+    if ($tag eq '' && $value eq '') {
+        load_all_photos();
+        return;
+    }
+
+    $spinner->start;
+    $spinner->show;
+    status_set("Suche läuft...");
+    Gtk3::main_iteration() while Gtk3::events_pending();
+
+    my ($sql, @params);
+
+    if ($tag ne '' && $value ne '') {
+        # Tag UND Wert
+        $sql = <<'SQL';
+SELECT DISTINCT p.id, p.path, p.filename
+FROM photos p
+JOIN exif_tags t ON p.id = t.photo_id
+WHERE t.tag LIKE ? AND t.value LIKE ?
+ORDER BY p.filename
+SQL
+        @params = ("%$tag%", "%$value%");
+    } elsif ($tag ne '') {
+        # Nur Tag (hat irgendeinen Wert)
+        $sql = <<'SQL';
+SELECT DISTINCT p.id, p.path, p.filename
+FROM photos p
+JOIN exif_tags t ON p.id = t.photo_id
+WHERE t.tag LIKE ? AND t.value IS NOT NULL
+ORDER BY p.filename
+SQL
+        @params = ("%$tag%");
+    } else {
+        # Nur Wert (in irgendeinem Tag)
+        $sql = <<'SQL';
+SELECT DISTINCT p.id, p.path, p.filename
+FROM photos p
+JOIN exif_tags t ON p.id = t.photo_id
+WHERE t.value LIKE ?
+ORDER BY p.filename
+SQL
+        @params = ("%$value%");
+    }
+
+    my $rows = eval {
+        $dbh->selectall_arrayref($sql, { Slice => {} }, @params);
+    };
+    if ($@) {
+        status_set("Datenbankfehler: $@");
+        $spinner->stop; $spinner->hide;
+        return;
+    }
+
+    @current_results = @$rows;
+    my $n = scalar @current_results;
+
+    my $search_desc = '';
+    $search_desc .= "Tag enthält '$tag'" if $tag ne '';
+    $search_desc .= " und "              if $tag ne '' && $value ne '';
+    $search_desc .= "Wert enthält '$value'" if $value ne '';
+
+    $lbl_results->set_text("$n Treffer für: $search_desc");
+
+    render_thumbnails();
+
+    $spinner->stop;
+    $spinner->hide;
+    status_set("$n Ergebnisse für: $search_desc");
+}
+
+# ── Thumbnails rendern ─────────────────────────────────────────────────────────
+sub render_thumbnails {
+    # Alle vorhandenen Kinder entfernen, Widget-Hash leeren
+    %widget_data = ();
+    for my $child ($flowbox->get_children) {
+        $flowbox->remove($child);
+    }
+
+    unless (@current_results) {
+        my $lbl = Gtk3::Label->new("Keine Ergebnisse");
+        $lbl->get_style_context->add_class('empty-label');
+        my $fbc = Gtk3::FlowBoxChild->new;
+        $fbc->add($lbl);
+        $flowbox->add($fbc);
+        $flowbox->show_all;
+        return;
+    }
+
+    for my $row (@current_results) {
+        my $child = make_thumb_widget($row->{id}, $row->{path}, $row->{filename});
+        $flowbox->add($child);
+    }
+    $flowbox->show_all;
+}
+
+# ── Einzelnes Thumbnail-Widget erstellen ──────────────────────────────────────
+sub make_thumb_widget {
+    my ($photo_id, $path, $filename) = @_;
+
+    # Äußerer Rahmen (FlowBoxChild)
+    my $frame = Gtk3::Box->new('vertical', 2);
+    $frame->get_style_context->add_class('thumb-frame');
+    $frame->set_size_request($thumb_size + 20, $thumb_size + 36);
+
+    # Bild
+    my $image = Gtk3::Image->new;
+    $image->set_size_request($thumb_size, $thumb_size);
+
+    my $pixbuf = get_thumbnail($photo_id, $path);
+    if ($pixbuf) {
+        $image->set_from_pixbuf($pixbuf);
+    } else {
+        # Platzhalterbild
+        $image->set_from_icon_name('image-missing', 'dialog');
+        $image->set_pixel_size($thumb_size);
+    }
+
+    # Label (gekürzter Dateiname)
+    my $short_name = $filename;
+    if (length($short_name) > 20) {
+        $short_name = substr($short_name, 0, 17) . '...';
+    }
+    my $lbl = Gtk3::Label->new($short_name);
+    $lbl->get_style_context->add_class('thumb-label');
+    $lbl->set_tooltip_text($filename);
+    $lbl->set_xalign(0.5);
+
+    $frame->pack_start($image, FALSE, FALSE, 0);
+    $frame->pack_start($lbl,   FALSE, FALSE, 0);
+
+    # Speichere photo_id/path im globalen Widget-Hash
+    $widget_data{$frame} = { photo_id => $photo_id, photo_path => $path };
+
+    my $fbc = Gtk3::FlowBoxChild->new;
+    $fbc->add($frame);
+    $fbc->set_tooltip_text($path);
+    return $fbc;
+}
+
+# ── Thumbnail-Pixbuf laden/cachen ─────────────────────────────────────────────
+sub get_thumbnail {
+    my ($photo_id, $path) = @_;
+
+    my $cache_key = "${photo_id}_${thumb_size}";
+    return $thumb_cache{$cache_key} if exists $thumb_cache{$cache_key};
+
+    unless (-f $path) {
+        $thumb_cache{$cache_key} = undef;
+        return undef;
+    }
+
+    my $pixbuf = eval {
+        GdkPixbuf::Pixbuf->new_from_file_at_scale(
+            $path, $thumb_size, $thumb_size, TRUE
+        );
+    };
+    $thumb_cache{$cache_key} = $pixbuf;
+    return $pixbuf;
+}
+
+# ── Thumbnails bei Größenänderung neu rendern ─────────────────────────────────
+sub refresh_thumbnails {
+    render_thumbnails();
+}
+
+# ── Thumbnail-Klick: Detail anzeigen ─────────────────────────────────────────
+sub on_thumb_activated {
+    my ($fb, $child) = @_;
+
+    # Finde photo_id aus dem Kind-Widget
+    my $frame    = ($child->get_children)[0];
+    my $photo_id = $widget_data{$frame}{photo_id};
+    my $path     = $widget_data{$frame}{photo_path};
+
+    return unless defined $photo_id;
+
+    # Markierung aktualisieren
+    for my $c ($flowbox->get_children) {
+        my $f = ($c->get_children)[0];
+        $f->get_style_context->remove_class('selected') if $f;
+    }
+    $frame->get_style_context->add_class('selected');
+
+    show_detail($photo_id, $path);
+}
+
+# ── Detail-Panel füllen ───────────────────────────────────────────────────────
+sub show_detail {
+    my ($photo_id, $path) = @_;
+    $selected_photo_id = $photo_id;
+
+    my $filename = basename($path);
+
+    # Header aktualisieren
+    $lbl_detail_title->set_text($filename);
+    $lbl_detail_path->set_text($path);
+    $lbl_detail_path->set_tooltip_text($path);
+
+    # Großes Vorschaubild
+    my $big_pixbuf = eval {
+        GdkPixbuf::Pixbuf->new_from_file_at_scale($path, 360, 220, TRUE);
+    };
+    if ($big_pixbuf) {
+        $detail_image->set_from_pixbuf($big_pixbuf);
+    } else {
+        $detail_image->set_from_icon_name('image-missing', 'dialog');
+        $detail_image->set_pixel_size(64);
+    }
+    $btn_open->set_sensitive(TRUE);
+
+    # EXIF-Tags laden
+    $tag_store->clear;
+    my $tags = $dbh->selectall_arrayref(
+        "SELECT tag, value FROM exif_tags WHERE photo_id = ? ORDER BY tag",
+        { Slice => {} },
+        $photo_id
+    );
+
+    for my $t (@$tags) {
+        my $iter = $tag_store->append;
+        $tag_store->set($iter,
+            0, $t->{tag}   // '',
+            1, $t->{value} // '-',
+        );
+    }
+
+    my $n_tags = scalar @$tags;
+    status_set("$filename  -  $n_tags EXIF-Tags");
+    $entry_tag_filter->set_text('');
+}
+
+# ── Tag-Filter im Detail-TreeView ────────────────────────────────────────────
+sub tag_filter_func {
+    my ($model, $iter) = @_;
+    my $filter = $entry_tag_filter->get_text // '';
+    return TRUE if $filter eq '';
+    my $tag = lc($model->get($iter, 0) // '');
+    my $val = lc($model->get($iter, 1) // '');
+    return index($tag, lc($filter)) >= 0 || index($val, lc($filter)) >= 0;
+}
+
+# ── Rechtsklick auf Tag → Suchfeld übernehmen ────────────────────────────────
+sub on_tag_tree_click {
+    my ($widget, $event) = @_;
+    return FALSE unless $event->button == 3;  # Rechtsklick
+
+    my ($path_obj) = $widget->get_path_at_pos($event->x, $event->y);
+    return FALSE unless $path_obj;
+
+    my $iter  = $tag_filter_model->get_iter($path_obj);
+    return FALSE unless $iter;
+
+    my $tag = $tag_filter_model->get($iter, 0);
+    my $val = $tag_filter_model->get($iter, 1);
+
+    my $menu = Gtk3::Menu->new;
+
+    my $item1 = Gtk3::MenuItem->new_with_label("Tag-Filter: $tag");
+    $item1->signal_connect(activate => sub {
+        set_combo_tag_text($combo_tag, $tag);
+        $entry_value->set_text('');
+        do_search();
+    });
+    $menu->append($item1);
+
+    if (defined $val && $val ne '-') {
+        my $short_val = length($val) > 30 ? substr($val,0,30).'...' : $val;
+        my $item2 = Gtk3::MenuItem->new_with_label("Suche nach: $short_val");
+        $item2->signal_connect(activate => sub {
+            set_combo_tag_text($combo_tag, $tag);
+            $entry_value->set_text($val);
+            do_search();
+        });
+        $menu->append($item2);
+    }
+
+    $menu->show_all;
+    $menu->popup_at_pointer($event);
+    return TRUE;
+}
+
+# ── Vollbild-Fenster ──────────────────────────────────────────────────────────
+sub open_fullscreen {
+    my ($photo_id) = @_;
+    return unless defined $photo_id;
+
+    my ($path) = $dbh->selectrow_array(
+        "SELECT path FROM photos WHERE id = ?", undef, $photo_id
+    );
+    return unless $path && -f $path;
+
+    my $win = Gtk3::Window->new('toplevel');
+    $win->set_title(basename($path) . "  -  Vollbild");
+    $win->set_default_size(900, 700);
+    $win->set_transient_for($window);
+    $win->set_position('center-on-parent');
+
+    my $vb = Gtk3::Box->new('vertical', 0);
+    $win->add($vb);
+
+    my $scroll2 = Gtk3::ScrolledWindow->new;
+    $scroll2->set_policy('automatic', 'automatic');
+    $vb->pack_start($scroll2, TRUE, TRUE, 0);
+
+    my $img = Gtk3::Image->new;
+
+    # Pixbuf laden (max 1200×900)
+    my $pb = eval {
+        GdkPixbuf::Pixbuf->new_from_file_at_scale($path, 1200, 900, TRUE);
+    };
+    if ($pb) {
+        $img->set_from_pixbuf($pb);
+    } else {
+        $img->set_from_icon_name('image-missing', 'dialog');
+        $img->set_pixel_size(128);
+    }
+
+    $scroll2->add_with_viewport($img);
+
+    my $btn_close = Gtk3::Button->new_with_label("Schließen");
+    $btn_close->get_style_context->add_class('reset-btn');
+    $btn_close->signal_connect(clicked => sub { $win->destroy });
+    $vb->pack_start($btn_close, FALSE, FALSE, 4);
+
+    $win->signal_connect('key-press-event' => sub {
+        my (undef, $ev) = @_;
+        $win->destroy if $ev->keyval == Gtk3::Gdk::KEY_Escape();
+        return FALSE;
+    });
+
+    $win->show_all;
+}
+
+# ── Tag-ComboBox befüllen ─────────────────────────────────────────────────────
+sub populate_tag_combo {
+    my ($combo) = @_;
+    my $tags = $dbh->selectcol_arrayref(
+        "SELECT DISTINCT tag FROM exif_tags ORDER BY tag"
+    );
+    for my $tag (@$tags) {
+        $combo->append_text($tag);
+    }
+}
+
+# ── ComboBoxText Entry-Text setzen ────────────────────────────────────────────
+sub set_combo_tag_text {
+    my ($combo, $text) = @_;
+    my $entry = $combo->get_child;
+    $entry->set_text($text) if $entry;
+}
+
+# ── Statusleiste ─────────────────────────────────────────────────────────────
+sub status_set {
+    my ($msg) = @_;
+    $statusbar->pop($status_ctx);
+    $statusbar->push($status_ctx, $msg);
+}
+
+# ── Startfehler-Dialog ────────────────────────────────────────────────────────
+sub show_startup_error {
+    my ($msg) = @_;
+    my $dlg = Gtk3::MessageDialog->new(
+        undef, 'modal', 'error', 'ok', $msg
+    );
+    $dlg->set_title("$APP_TITLE  -  Fehler");
+    $dlg->run;
+    $dlg->destroy;
+}
