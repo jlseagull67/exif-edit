@@ -1,21 +1,21 @@
 #!/usr/bin/env perl
 #
-# exif2sqlite.pl – Liest EXIF-Tags aller Fotos rekursiv aus
-#                  und speichert sie in einer SQLite-Datenbank.
+# exif2sqlite – Recursively reads the EXIF tags of all photos
+#                  and saves them to an SQLite database.
 #
 # Verwendung:
-#   perl exif2sqlite.pl [Optionen] <Verzeichnis> [<Verzeichnis2> ...]
+#   perl exif2sqlite [Options] <Path> [<Path> ...]
 #
 # Optionen:
-#   --db <datei>      SQLite-Datenbankdatei (Standard: exif_data.db)
-#   --ext <liste>     Kommagetrennte Dateiendungen (Standard: jpg,jpeg,tif,tiff,png,heic,heif,webp,raw,cr2,cr3,nef,arw,dng,orf,rw2,pef)
-#   --reset           Datenbank vor dem Lauf leeren/neu anlegen
-#   --verbose         Ausführliche Ausgabe
-#   --help            Diese Hilfe anzeigen
+#   --db <file>       SQLite-Datenbankdatei (Standard: exif_data.db)
+#   --ext <list>      komma separated list of extensions (standard: jpg,jpeg,tif,tiff,png,heic,heif,webp,raw,cr2,cr3,nef,arw,dng,orf,rw2,pef)
+#   --reset           Completely empty the database before running
+#   --verbose         verbose log output
+#   --help, -h        Display this help
 #
-# Datenbankstruktur:
-#   Tabelle "photos"  : id INTEGER PRIMARY KEY, path TEXT UNIQUE, scanned_at TEXT
-#   Tabelle "exif_tags": id INTEGER PK, photo_id INTEGER FK, tag TEXT, value TEXT
+# Database structure:
+#   Table "photos"  : id INTEGER PRIMARY KEY, path TEXT UNIQUE, scanned_at TEXT
+#   Table "exif_tags": id INTEGER PK, photo_id INTEGER FK, tag TEXT, value TEXT
 #
 
 use strict;
@@ -26,24 +26,38 @@ use File::Basename  qw(basename);
 use Getopt::Long    qw(GetOptions :config no_ignore_case);
 use DBI;
 use POSIX           qw(strftime);
+use Image::ExifTool qw(:Public);
+use Encode          qw(decode encode FB_CROAK);
 
 binmode STDOUT, ':utf8';
 binmode STDERR, ':utf8';
 
-# ─── Standardwerte ────────────────────────────────────────────────────────────
+# create ExifTool-Object only once and reuse it
+my $EXIF_TOOL = Image::ExifTool->new;
+$EXIF_TOOL->Options(
+    Unknown     => 1,
+    Binary      => 0,
+    Duplicates  => 1,
+    CharsetEXIF => 'UTF8',
+    FastScan    => 0,
+);
+
+# ─── standard parameters ────────────────────────────────────────────────────────────
 my $DB_FILE  = 'exif_data.db';
 my $VERBOSE  = 0;
 my $RESET    = 0;
 my $HELP     = 0;
 my $EXT_LIST = 'jpg,jpeg,tif,tiff,png,heic,heif,webp,raw,cr2,cr3,nef,arw,dng,orf,rw2,pef';
 
+
+# get commandline parameters
 GetOptions(
     'db=s'      => \$DB_FILE,
     'ext=s'     => \$EXT_LIST,
     'reset'     => \$RESET,
     'verbose'   => \$VERBOSE,
     'help|h'    => \$HELP,
-) or die "Fehler beim Parsen der Argumente. Benutze --help für Hilfe.\n";
+) or die "Error parsing the commandline parameters. Please use --help for help.\n";
 
 if ($HELP) {
     print_help();
@@ -52,20 +66,20 @@ if ($HELP) {
 
 my @DIRS = @ARGV;
 if (!@DIRS) {
-    print STDERR "Fehler: Kein Verzeichnis angegeben.\n\n";
+    print STDERR "Error: No Path given. Please use --help for help.\n\n";
     print_help();
     exit 1;
 }
 
 # Prüfe ob angegebene Verzeichnisse existieren
 for my $dir (@DIRS) {
-    die "Verzeichnis nicht gefunden: $dir\n" unless -d $dir;
+    die "Path not found: $dir\n" unless -d $dir;
 }
 
-# Erlaubte Dateiendungen als Hash (Lowercase für schnellen Lookup)
+# Allowed file extensions as hash (Lowercase for quick lookup)
 my %ALLOWED_EXT = map { lc($_) => 1 } split(/,/, $EXT_LIST);
 
-# ─── Datenbankverbindung ───────────────────────────────────────────────────────
+# ─── Database connection ───────────────────────────────────────────────────────
 print "Verbinde mit Datenbank: $DB_FILE\n";
 my $dbh = DBI->connect(
     "dbi:SQLite:dbname=$DB_FILE",
@@ -76,18 +90,18 @@ my $dbh = DBI->connect(
         sqlite_unicode    => 1,
         PrintError        => 0,
     }
-) or die "Datenbankverbindung fehlgeschlagen: $DBI::errstr\n";
+) or die "Database connection failed: $DBI::errstr\n";
 
-# Performance-Pragmas für SQLite (müssen außerhalb einer Transaktion gesetzt werden)
+# Performance-Pragmas for SQLite (need to be set in one transaction)
 $dbh->do("PRAGMA journal_mode = WAL");
 $dbh->do("PRAGMA synchronous  = NORMAL");
 $dbh->do("PRAGMA cache_size   = 10000");
 $dbh->do("PRAGMA temp_store   = MEMORY");
 
-# Jetzt auf manuelles Commit umschalten
+# After that change to manuel commit
 $dbh->{AutoCommit} = 0;
 
-# ─── Tabellen anlegen ─────────────────────────────────────────────────────────
+# ─── Create Tables ─────────────────────────────────────────────────────────
 if ($RESET) {
     print "Datenbank wird zurückgesetzt...\n";
     $dbh->do("DROP TABLE IF EXISTS exif_tags");
@@ -113,7 +127,7 @@ CREATE TABLE IF NOT EXISTS exif_tags (
 )
 SQL
 
-# Indizes für schnelle Abfragen
+# Indexes for selection
 $dbh->do("CREATE INDEX IF NOT EXISTS idx_exif_photo_id ON exif_tags(photo_id)");
 $dbh->do("CREATE INDEX IF NOT EXISTS idx_exif_tag     ON exif_tags(tag)");
 $dbh->do("CREATE INDEX IF NOT EXISTS idx_photos_path  ON photos(path)");
@@ -134,7 +148,7 @@ my $sth_insert_tag   = $dbh->prepare(<<'SQL');
 INSERT INTO exif_tags (photo_id, tag, value) VALUES (?, ?, ?)
 SQL
 
-# ─── Dateien rekursiv finden und verarbeiten ──────────────────────────────────
+# ─── Find and execute files recursivly ──────────────────────────────────
 my $scanned_at  = strftime('%Y-%m-%d %H:%M:%S', localtime);
 my $count_total = 0;
 my $count_ok    = 0;
@@ -145,15 +159,22 @@ my @photo_batch;         # Für Batch-Verarbeitung
 print "\nStarte Scan in: " . join(', ', @DIRS) . "\n";
 print "Erlaubte Endungen: $EXT_LIST\n\n";
 
-# Sammle alle passenden Dateien
-my @all_files;
+# Collect all foto files.
+# Two arrays in parallel:
+#   @all_files_raw  - raw bytes from file system (for ExifTool and stat())
+#   @all_files      - in Unicode (for DB-Path and Output)
+my (@all_files, @all_files_raw);
 find(
     {
         wanted => sub {
-            return unless -f $_;
+            return unless -f $_;                          # stat() needs Bytes
             my ($ext) = $_ =~ /\.([^.]+)$/;
             return unless defined $ext && $ALLOWED_EXT{lc($ext)};
-            push @all_files, $File::Find::name;
+            return if $File::Find::name =~ /todel/i;
+            my $raw = $File::Find::name;
+            my $dec = eval { decode('UTF-8', $raw, FB_CROAK) } // $raw;
+            push @all_files_raw, $raw;
+            push @all_files,     $dec;
         },
         no_chdir => 1,
         follow   => 0,
@@ -162,43 +183,69 @@ find(
 );
 
 my $total = scalar @all_files;
-print "Gefundene Bilddateien: $total\n\n";
+print "Found Picture Files: $total\n\n";
 
-# Verarbeite alle Dateien
-for my $filepath (@all_files) {
+# Signal-Handler: clean commit end exit on SIGINT/SIGTERM
+$SIG{INT}  = \&handle_signal;
+$SIG{TERM} = \&handle_signal;
+
+# STDOUT unbuffered for immediate progress info
+local $| = 1;
+
+# Execute all files
+for my $i (0 .. $#all_files) {
+    my $filepath     = $all_files[$i];      # Unicode fuer DB + Ausgabe
+    my $filepath_raw = $all_files_raw[$i];  # Bytes fuer ExifTool + stat()
     $count_total++;
-    my $progress_pct = int($count_total / $total * 100);
+    my $progress_pct = $total > 0 ? int($count_total / $total * 100) : 0;
 
     printf "[%3d%%] (%d/%d) %s\n",
         $progress_pct, $count_total, $total,
         ($VERBOSE ? $filepath : shorten_path($filepath, 70))
         if $VERBOSE || ($count_total % 10 == 0) || $count_total == $total;
 
-    my $ok = process_file($filepath, $scanned_at);
-    if ($ok) { $count_ok++ } else { $count_err++ }
+    my $ok = eval { process_file($filepath, $filepath_raw, $scanned_at) };
+    if ($@) {
+        chomp(my $err = $@);
+        # Zeige offene FDs als Diagnosehilfe
+        my $fds = scalar(glob("/proc/self/fd/*")) // '?';
+        print STDERR "  Abort at File '$filepath':\n";
+        print STDERR "    ERROR : $err\n";
+        print STDERR "    Open FDs: $fds\n";
+        $count_err++;
+    } elsif ($ok) {
+        $count_ok++;
+    } else {
+        $count_err++;
+    }
 
-    # Batch-Commit
+    # Batch-Commit + RAM-usage-Log all 500 Files
     if ($count_total % $BATCH_SIZE == 0) {
         $dbh->commit;
-        print "  → Commit nach $count_total Dateien\n" if $VERBOSE;
+        if ($VERBOSE || $count_total % 500 == 0) {
+            # Speicherverbrauch aus /proc/self/status lesen (Linux)
+            my $mem_mb = get_mem_mb();
+            printf "  Commit %d Dateien | RAM: %s MB\n",
+                $count_total, defined $mem_mb ? sprintf("%.0f", $mem_mb) : "?";
+        }
     }
 }
 
-# Letzter Commit
+# Last Commit
 $dbh->commit;
 
-# ─── Zusammenfassung ──────────────────────────────────────────────────────────
+# ─── Summary ──────────────────────────────────────────────────────────
 my ($tag_count)   = $dbh->selectrow_array("SELECT COUNT(*) FROM exif_tags");
 my ($photo_count) = $dbh->selectrow_array("SELECT COUNT(*) FROM photos");
 
 print "\n" . "═" x 60 . "\n";
-print "Scan abgeschlossen.\n";
-printf "  Dateien verarbeitet : %d\n", $count_total;
-printf "  Erfolgreich         : %d\n", $count_ok;
-printf "  Fehler              : %d\n", $count_err;
+print "Scan finished.\n";
+printf "  Files processed     : %d\n", $count_total;
+printf "  Successfull         : %d\n", $count_ok;
+printf "  Errors              : %d\n", $count_err;
 printf "  Fotos in DB         : %d\n", $photo_count;
 printf "  EXIF-Tags in DB     : %d\n", $tag_count;
-printf "  Datenbank           : %s\n", $DB_FILE;
+printf "  Database            : %s\n", $DB_FILE;
 print "═" x 60 . "\n";
 
 $sth_insert_photo->finish;
@@ -211,49 +258,85 @@ exit($count_err > 0 ? 1 : 0);
 # ─── Subroutinen ──────────────────────────────────────────────────────────────
 
 sub process_file {
-    my ($filepath, $ts) = @_;
+    my ($filepath, $filepath_raw, $ts) = @_;
+    # $filepath     = Unicode-String for DB + Output
+    # $filepath_raw = raw UTF-8 Bytes for ExifTool + stat()
 
-    # exiftool aufrufen: alle Tags im Format "Tag: Wert"
-    # -s2  = kurze Tag-Namen, -f = fehlende Werte als "-"
-    # -charset UTF8 = UTF-8 Ausgabe
-    my @lines = qx(exiftool -charset UTF8 -s2 -f "$filepath" 2>/dev/null);
-    if ($? != 0 || !@lines) {
-        print STDERR "  WARNUNG: exiftool-Fehler bei: $filepath\n";
+    # Reuse global ExifTool-Object.
+    # Init() for reset of ExifTool-Object.
+    $EXIF_TOOL->Init();
+
+    # IMPORTANT: Calling decode() from Encode sets Perl's UTF-8 mode globally.
+    # After that, ExifTool treats byte strings as Unicode and can no longer
+    # open the file ("No file specified" / only 2 tags).
+    # Solution: encode() explicitly converts the Unicode path back to
+    # clean UTF-8 bytes without the utf8 flag -> ExifTool opens the file correctly.
+
+    my $exif_path = encode('UTF-8', $filepath);
+
+    # ALRM timeout: Aborts unresponsive files after 30 seconds
+    my $info;
+    eval {
+        local $SIG{ALRM} = sub { die "TIMEOUT\n" };
+        alarm(30);
+        $info = $EXIF_TOOL->ImageInfo($exif_path);
+        alarm(0);
+    };
+    alarm(0);  # to be sure rest alarm each time
+    if ($@ eq "TIMEOUT\n") {
+        print STDERR "  TIMEOUT (>30s): $filepath\n";
+        return 0;
+    } elsif ($@) {
+        print STDERR "  ERROR in ExifTool: $@ bei $filepath\n";
+        return 0;
+    }
+    unless (defined $info) {
+        print STDERR "  WARNING: ExifTool could not read file: $filepath\n";
         return 0;
     }
 
-    # Foto in DB einfügen / aktualisieren
+    # insert Foto in DB
     my $filename = basename($filepath);
     eval {
         $sth_insert_photo->execute($filepath, $filename, $ts);
     };
     if ($@) {
-        print STDERR "  FEHLER beim Einfügen von Foto '$filepath': $@\n";
+        print STDERR "  ERROR: inserting Foto '$filepath': $@\n";
         return 0;
     }
 
-    # photo_id holen
-    $sth_get_photo_id->execute($filepath);
-    my ($photo_id) = $sth_get_photo_id->fetchrow_array;
+    # photo_id holen: last_insert_id bei neuem Eintrag, sonst SELECT
+    my $photo_id = $dbh->last_insert_id(undef, undef, 'photos', undef);
+    unless ($photo_id) {
+        # Foto war bereits vorhanden (INSERT OR REPLACE hat nichts eingefuegt)
+        $sth_get_photo_id->execute($filepath);
+        ($photo_id) = $sth_get_photo_id->fetchrow_array;
+        $sth_get_photo_id->finish;   # close Handle explicitly
+    }
     unless (defined $photo_id) {
-        print STDERR "  FEHLER: Konnte photo_id nicht ermitteln für '$filepath'\n";
+        print STDERR "  ERROR: Could not find photo_id for '$filepath'\n";
         return 0;
     }
 
-    # Alte Tags löschen (für Re-Scan)
+    # Delete old Tags (for Re-Scan)
     $sth_delete_tags->execute($photo_id);
 
-    # Tags einfügen
+    # insert all Tags
     my $tag_count = 0;
-    for my $line (@lines) {
-        chomp $line;
-        # Format: "TagName: Wert"  – Wert kann ':' enthalten
-        next unless $line =~ /^([^:]+?)\s*:\s*(.*)/;
-        my ($tag, $value) = ($1, $2);
-        $tag   =~ s/^\s+|\s+$//g;
-        $value =~ s/^\s+|\s+$//g;
-        next unless length($tag);
-        $value = undef if $value eq '-';    # exiftool "-f" Platzhalter → NULL
+    for my $tag (sort keys %$info) {
+        my $value = $info->{$tag};
+
+        # Solve References (i.e. to Binary data) to readable string
+        if (ref $value eq 'SCALAR') {
+            $value = '(binary, ' . length($$value) . ' bytes)';
+        } elsif (ref $value) {
+            $value = "$value";
+        }
+
+        # Save undefinined oder missing values as NULL
+        if (!defined $value || $value eq '') {
+            $value = undef;
+        }
 
         eval { $sth_insert_tag->execute($photo_id, $tag, $value) };
         if ($@) {
@@ -263,7 +346,7 @@ sub process_file {
         }
     }
 
-    printf "    → %d Tags gespeichert\n", $tag_count if $VERBOSE;
+    printf "    -> %d Tags gespeichert\n", $tag_count if $VERBOSE;
     return 1;
 }
 
@@ -274,51 +357,69 @@ sub shorten_path {
     return substr($path, 0, $half) . '...' . substr($path, -$half);
 }
 
+sub handle_signal {
+    my ($sig) = @_;
+    print STDERR "\n  Signal $sig received -- commit and end...\n";
+    eval { $dbh->commit };
+    print STDERR "  Commit OK. Up to here: $count_ok OK, $count_err Error, $count_total Total.\n";
+    exit 1;
+}
+
+sub get_mem_mb {
+    open my $fh, '<', '/proc/self/status' or return undef;
+    while (<$fh>) {
+        if (/^VmRSS:\s+(\d+)\s+kB/) {
+            return $1 / 1024;
+        }
+    }
+    return undef;
+}
+
 sub print_help {
     print <<'END_HELP';
-exif2sqlite.pl – EXIF-Daten aller Fotos in SQLite-Datenbank speichern
+exif2sqlite – Save EXIF data from all photos to an SQLite database
 
-VERWENDUNG:
-  perl exif2sqlite.pl [Optionen] <Verzeichnis> [<Verzeichnis2> ...]
+USAGE:
+  perl exif2sqlite [options] <directory> [<directory2> ...]
 
-OPTIONEN:
-  --db <datei>   SQLite-Datenbankdatei (Standard: exif_data.db)
-  --ext <liste>  Kommagetrennte Endungen ohne Punkt (Standard: jpg,jpeg,...)
-  --reset        Datenbank vor dem Lauf komplett leeren
-  --verbose      Ausführliche Ausgabe jeder Datei und ihrer Tags
-  --help, -h     Diese Hilfe anzeigen
+OPTIONS:
+  --db <file>    SQLite database file (default: exif_data.db)
+  --ext <list>   Comma-separated file extensions without the dot (default: jpg,jpeg,...)
+  --reset        Completely empty the database before running
+  --verbose      Detailed output for each file and its tags
+  --help, -h     Display this help
 
-BEISPIELE:
-  perl exif2sqlite.pl /fotos
-  perl exif2sqlite.pl --db meine.db --reset /fotos /bilder
-  perl exif2sqlite.pl --ext jpg,png --verbose ~/Bilder
+EXAMPLES:
+  perl exif2sqlite /photos
+  perl exif2sqlite --db my.db --reset /photos /images
+  perl exif2sqlite --ext jpg,png --verbose ~/Images
 
-DATENBANKSTRUKTUR:
-  Tabelle "photos":
+DATABASE STRUCTURE:
+  "photos" table:
     id          INTEGER  PRIMARY KEY AUTOINCREMENT
-    path        TEXT     UNIQUE – absoluter Pfad zur Datei
-    filename    TEXT     – Dateiname ohne Pfad
-    scanned_at  TEXT     – Zeitstempel des Scans (YYYY-MM-DD HH:MM:SS)
+    path        TEXT     UNIQUE – absolute path to the file
+    filename    TEXT     – filename without path
+    scanned_at  TEXT     – Scan timestamp (YYYY-MM-DD HH:MM:SS)
 
-  Tabelle "exif_tags":
+  "exif_tags" table:
     id          INTEGER  PRIMARY KEY AUTOINCREMENT
     photo_id    INTEGER  FOREIGN KEY → photos.id
-    tag         TEXT     – EXIF-Tag-Name (z. B. "Make", "Model", "GPSLatitude")
-    value       TEXT     – Wert des Tags (NULL wenn nicht vorhanden)
+    tag         TEXT     – EXIF tag name (e.g., "Make", "Model", "GPSLatitude")
+    value       TEXT     – Tag value (NULL if not...
 
-NÜTZLICHE ABFRAGEN:
-  Alle Fotos:
+USEFUL QUERIES:
+  All photos:
     SELECT * FROM photos;
 
-  Alle Tags eines Fotos:
+  All tags for a photo:
     SELECT tag, value FROM exif_tags WHERE photo_id = 1;
 
-  Alle Fotos einer Kamera:
+  All photos from a camera:
     SELECT p.path, t.value
     FROM photos p JOIN exif_tags t ON p.id = t.photo_id
     WHERE t.tag = 'Model';
 
-  Fotos mit GPS-Daten:
+  Photos with GPS data:
     SELECT p.path, t.value
     FROM photos p JOIN exif_tags t ON p.id = t.photo_id
     WHERE t.tag = 'GPSLatitude';
