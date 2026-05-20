@@ -32,6 +32,7 @@ A lightweight GTK3-based image browser for Linux that lets you view thumbnails a
 - [Gtk3](https://metacpan.org/pod/Gtk3) (`libgtk-3` + Perl bindings)
 - [Glib](https://metacpan.org/pod/Glib)
 - [Image::ExifTool](https://metacpan.org/pod/Image::ExifTool)
+- [YAML::Tiny](https://metacpan.org/pod/YAML::Tiny)
 - [Encode](https://metacpan.org/pod/Encode) (core module)
 - [POSIX](https://metacpan.org/pod/POSIX) (core module)
 - [File::Basename](https://metacpan.org/pod/File::Basename) (core module)
@@ -42,7 +43,7 @@ A lightweight GTK3-based image browser for Linux that lets you view thumbnails a
 
 ```bash
 # Via cpanm
-cpanm Gtk3 Glib Image::ExifTool
+cpanm Gtk3 Glib Image::ExifTool YAML::Tiny
 
 # Or via your distro's package manager (Debian/Ubuntu example)
 sudo apt install libgtk3-perl libimage-exiftool-perl
@@ -80,9 +81,9 @@ The window opens maximised, showing thumbnails of all `.jpg`, `.jpeg`, and `.png
 
 | Action | Result |
 |---|---|
-| Click anywhere on a thumbnail | Select it — EXIF details appear in the sidebar |
-| Left-click a thumbnail | Opens the image in Chromium |
-| Right-click a thumbnail | Opens the image in GIMP |
+| Middle-click anywhere on a thumbnail | Set the focus to Image — EXIF details appear in the sidebar |
+| Left-click a thumbnail | Set the focus to Image and Opens the image in Chromium |
+| Right-click a thumbnail | Set the focus to Image and Opens the image in GIMP |
 | Edit the text field below a thumbnail, then tab/click away | Saves the new EXIF `Comment` to the file |
 | Click the filename label | Sets the comment to `todel` |
 | **File → Reload** (`Ctrl+R`) | Rescans the directory and refreshes thumbnails |
