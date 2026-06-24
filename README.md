@@ -37,7 +37,7 @@ A lightweight GTK3-based image browser for Linux that lets you view thumbnails a
 - [POSIX](https://metacpan.org/pod/POSIX) (core module)
 - [File::Basename](https://metacpan.org/pod/File::Basename) (core module)
 - Chromium (or your prefered Image preview Tool for left-click image preview - see Settings-Section)
-- GIMP (or your prefered Image editing Toll for right-click image editing - see Settings-Section)
+- GIMP (or your prefered Image editing Tool for right-click image editing - see Settings-Section)
 
 ### Installing Perl dependencies
 
