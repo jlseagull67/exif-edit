@@ -342,6 +342,21 @@ sub load_images {
 
         my $exifTool        = Image::ExifTool->new;
         $exifTool->ExtractInfo($file);
+
+        # Rotate/flip thumbnail according to EXIF Orientation
+        {
+            my $orientation = $exifTool->GetValue('Orientation', 'ValueConv') // 1;
+            my $rotated = $pixbuf;
+            if    ($orientation == 2) { $rotated = $pixbuf->flip(TRUE);  }                              # Horizontal flip
+            elsif ($orientation == 3) { $rotated = $pixbuf->rotate_simple('upsidedown'); }              # 180°
+            elsif ($orientation == 4) { $rotated = $pixbuf->flip(FALSE); }                              # Vertical flip
+            elsif ($orientation == 5) { $rotated = $pixbuf->rotate_simple('clockwise')->flip(TRUE); }   # 90° CW + H-flip
+            elsif ($orientation == 6) { $rotated = $pixbuf->rotate_simple('clockwise'); }               # 90° CW
+            elsif ($orientation == 7) { $rotated = $pixbuf->rotate_simple('counterclockwise')->flip(TRUE); } # 90° CCW + H-flip
+            elsif ($orientation == 8) { $rotated = $pixbuf->rotate_simple('counterclockwise'); }        # 90° CCW
+            $image->set_from_pixbuf($rotated) if $rotated != $pixbuf;
+        }
+
         my $comment         = $exifTool->GetValue($comment_tag, 'PrintConv') // '';
         my $commententry    = Gtk3::Entry->new();
         $commententry->set_text(decode('UTF-8', $comment));
