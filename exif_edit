@@ -80,7 +80,7 @@ my @imageeventboxes = ();
 #################################################################################
 my ($cfg_tags, $cfg_settings) = load_config();
 
-my $cmd_left    = $cfg_settings->{action_left_mousebutton}   || 'chromium';
+my $cmd_left    = $cfg_settings->{action_left_mousebutton}   || 'chromium --disable-features=GCMRegistration 2>/dev/null';
 my $cmd_right   = $cfg_settings->{action_right_mousebutton}  || 'gimp';
 my $comment_tag = $cfg_settings->{name_of_exif_edit_comment} || 'Comment';
 
